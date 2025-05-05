@@ -2,5 +2,5 @@
 .vscode
 
 # executáveis
-.o
-.exe
+*.o
+*.exe
