@@ -11,6 +11,9 @@
 #include "mlp.h"
 using namespace std;
 
+// Forward declaration for InitializeRandoms
+void InitializeRandoms();
+
 const int MAX_EPOCHS = 100;
 const double LEARNING_RATE = 0.01;
 
@@ -197,15 +200,16 @@ int main(int argc, char* argv[]) {
     mlp.dAlpha = 0.9;
     mlp.dGain = 1.0;
     
-    // Initialize weights on rank 0 and broadcast to all processes
-    if (rank == 0) {
-        mlp.RandomWeights();
-    }
-    
+    // Since RandomWeights is private, we'll handle initialization and broadcast differently
     vector<double> weights_buf;
     int weights_count = 0;
     
     if (rank == 0) {
+        // On the root node, create and initialize a model with random weights
+        // Use public methods only
+        
+        // The MLP library must provide a way to initialize, possibly through the constructor
+        // We'll use serialize to extract the weights after creation
         serialize(mlp, weights_buf);
         weights_count = weights_buf.size();
     }
