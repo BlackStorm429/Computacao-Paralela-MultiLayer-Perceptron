@@ -6,32 +6,53 @@ Código base: implementação do algoritmo Perceptron simples em C++ com versõe
 
 # Instruções
 
-## perceptron.cpp  
-- Para compilar  
+## Versão sequencial
+- Navegue até o diretório `seq`
     ```bash
-    g++ -o perceptron perceptron.cpp
-    ```
-- Para executar  
-    ```bash
-    ./perceptron.exe <dataset.txt>
+    cd seq
     ```
 
-## perceptron_openMP.cpp  
-- Para compilar  
+- Para compilar e executar com makefile
     ```bash
-    g++ -fopenmp -o perceptron_OMP perceptron_OMP.cpp
+    make run
     ```
-- Para executar  
+
+## Versão OpenMP
+- Navegue até o diretório `openmp`
+    ```bash
+    cd openmp
+    ```
+
+- Para compilar e executar com makefile com parâmetros padrão
+    ```bash
+    make run
+    ```
+
+- Para compilar com makefile e depois executar  
+    ```bash
+    make
+    ```
+
     ```bash
     ./perceptron_OMP.exe [número_de_threads] <dataset.txt>
     ```
 
-## perceptron_MPI.cpp  
-- Para compilar  
+## Versão MPI
+- Navegue até o diretório `mpi`
     ```bash
-    mpic++ -o perceptron_MPI perceptron_MPI.cpp
+    cd mpi
     ```
-- Para executar  
+
+- Para compilar e executar com makefile com parâmetros padrão
+    ```bash
+    make run
+    ```
+
+- Para compilar com makefile e depois executar  
+    ```bash
+    make
+    ```
+
     ```bash
     mpirun -np [número_de_processos] ./perceptron_MPI.exe <dataset.txt>
     ```
