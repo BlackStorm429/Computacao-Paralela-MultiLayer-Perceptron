@@ -145,22 +145,20 @@ int main(int argc, char* argv[]) {
 
     for (int epoch = 0; epoch < MAX_EPOCHS; ++epoch) {
         int hits = 0;
-        #pragma omp parallel
+        #pragma omp parallel firstprivate(input,output,target) reduction(+:hits)
         {
             int tid = omp_get_thread_num();
             auto& mlp = replicas[tid];
-            int local_hits = 0;
+            //int local_hits = 0;
             #pragma omp for schedule(static)
             for (int i = 0; i < (int)X_train.size(); ++i) {
                 for (size_t j = 0; j < dims; ++j) input[j] = X_train[i][j];
-                fill(target.begin(), target.end(), 0.0);
+                std::fill(target.begin(), target.end(), 0.0);
                 target[y_train[i]] = 1.0;
                 mlp.Simulate(input.data(), output.data(), target.data(), true);
-                int pred = distance(output.begin(), max_element(output.begin(), output.end()));
-                if (pred == y_train[i]) local_hits++;
+                int pred = std::distance(output.begin(), std::max_element(output.begin(), output.end()));
+                if (pred == y_train[i]) hits++;
             }
-            #pragma omp atomic
-            hits += local_hits;
         }
         // Agregar réplicas e normalizar
         for (int t = 1; t < num_threads; ++t)
