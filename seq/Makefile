@@ -1,4 +1,5 @@
 CXX      := g++
+CXXFLAGS := -std=c++11 -fopenmp
 
 SOURCES := perceptron.cpp ../mlp/mlp.cc
 OBJECTS := $(SOURCES:.cpp=.o)
@@ -7,10 +8,10 @@ TARGET  := perceptron
 all: $(TARGET)
 
 $(TARGET): $(OBJECTS)
-	$(CXX) $^ -o $@
+	$(CXX) $(CXXFLAGS) $^ -o $@
 
 %.o: %.cpp
-	$(CXX) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 .PHONY: run
 run: $(TARGET)

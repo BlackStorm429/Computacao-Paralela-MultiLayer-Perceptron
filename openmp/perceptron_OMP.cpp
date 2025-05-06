@@ -114,7 +114,7 @@ int main(int argc, char* argv[]) {
     }
     if (X.empty()) { cerr << "Sem dados!" << endl; return 1; }
 
-    size_t n = X.size();
+    // size_t n = X.size();
     size_t dims = X[0].size();
 
     shuffle_data(X, y);

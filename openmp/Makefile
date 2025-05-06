@@ -1,5 +1,5 @@
 CXX      := g++
-CXXFLAGS := -fopenmp
+CXXFLAGS := -std=c++11 -fopenmp
 
 SOURCES := perceptron_OMP.cpp ../mlp/mlp.cc
 OBJECTS := $(SOURCES:.cpp=.o)

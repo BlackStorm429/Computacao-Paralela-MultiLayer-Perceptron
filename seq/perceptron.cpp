@@ -131,7 +131,7 @@ int main() {
         return 1;
     }
 
-    size_t n_amostras = X.size();
+    // size_t n_amostras = X.size();
     size_t n_atributos = X[0].size();
 
     // Embaralhar os dados
