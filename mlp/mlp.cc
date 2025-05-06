@@ -51,6 +51,66 @@ double RandomEqualREAL(double Low, double High)
   return ((double) rand() / RAND_MAX) * (High-Low) + Low;
 }
 
+// Construtor de cópia: aloca novas estruturas e copia valores
+MultiLayerPerceptron::MultiLayerPerceptron(const MultiLayerPerceptron& other)
+  : nNumLayers(other.nNumLayers)
+{
+    // 1) Duplica o array de camadas
+    pLayers = new Layer[nNumLayers];
+
+    // 2) Copia os tamanhos e aloca neurônios
+    for (int i = 0; i < nNumLayers; ++i) {
+        pLayers[i].nNumNeurons = other.pLayers[i].nNumNeurons;
+        pLayers[i].pNeurons    = new Neuron[ pLayers[i].nNumNeurons ];
+
+        // Se não for camada de entrada, aloca w, dw, wsave
+        if (i > 0) {
+            int prevN = other.pLayers[i-1].nNumNeurons;
+            for (int j = 0; j < pLayers[i].nNumNeurons; ++j) {
+                pLayers[i].pNeurons[j].w     = new double[prevN];
+                pLayers[i].pNeurons[j].dw    = new double[prevN];
+                pLayers[i].pNeurons[j].wsave = new double[prevN];
+                // 3) Copia pesos armazenados no vetor weights
+                for (int k = 0; k < prevN; ++k) {
+                    double v = other.pLayers[i].pNeurons[j].w[k];
+                    pLayers[i].pNeurons[j].w[k]     = v;
+                    pLayers[i].pNeurons[j].dw[k]    = other.pLayers[i].pNeurons[j].dw[k];
+                    pLayers[i].pNeurons[j].wsave[k] = other.pLayers[i].pNeurons[j].wsave[k];
+                }
+            }
+        }
+        else {
+            // entrada não tem arrays de pesos
+            for (int j = 0; j < pLayers[i].nNumNeurons; ++j)
+                pLayers[i].pNeurons[j].w = pLayers[i].pNeurons[j].dw = pLayers[i].pNeurons[j].wsave = nullptr;
+        }
+    }
+
+    // 4) Copia demais campos escalares
+    dMSE = other.dMSE;
+    dMAE = other.dMAE;
+    dEta = other.dEta;
+    dAlpha = other.dAlpha;
+    dGain = other.dGain;
+    dAvgTestError = other.dAvgTestError;
+
+    // 5) Copia vetores de compatibilidade (weights, biases)
+    weights = other.weights;
+    biases  = other.biases;
+}
+
+MultiLayerPerceptron& MultiLayerPerceptron::operator=(const MultiLayerPerceptron& other)
+{
+    if (this == &other) return *this;
+
+    // 1) Liberar recursos atuais (mesmo que destrutor faria)
+    this->~MultiLayerPerceptron();
+
+    // 2) Reconstruir via cópia: usar placement new
+    new (this) MultiLayerPerceptron(other);
+    return *this;
+}
+
 MultiLayerPerceptron::MultiLayerPerceptron(int nl, int npl[]) :
   nNumLayers(0),
   pLayers(0),

@@ -89,6 +89,8 @@ public:
   void SetBias(int layer, int neuron, double value);
   int Predict(const double* input) const;
 
+  MultiLayerPerceptron(const MultiLayerPerceptron& other);              // construtor de cópia
+  MultiLayerPerceptron& operator=(const MultiLayerPerceptron& other);   // operador de atribuição
 };
 
 #endif
