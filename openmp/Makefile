@@ -3,7 +3,7 @@ CXXFLAGS := -std=c++11 -fopenmp
 
 SOURCES := perceptron_OMP.cpp ../mlp/mlp.cc
 OBJECTS := $(SOURCES:.cpp=.o)
-TARGET  := perceptron_OMP
+TARGET  := perceptron_OMP.out
 
 all: $(TARGET)
 
@@ -15,7 +15,7 @@ $(TARGET): $(OBJECTS)
 
 .PHONY: run
 run: $(TARGET)
-	./$(TARGET) 4 < ../dataset/diabetes.txt
+	./$(TARGET) 4 < ../dataset/diabetes_balanced.txt
 
 clean:
 	rm -f $(OBJECTS) $(TARGET)

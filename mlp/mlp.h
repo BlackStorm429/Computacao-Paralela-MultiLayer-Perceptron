@@ -47,8 +47,6 @@ class MultiLayerPerceptron {
   double dMSE;
   double dMAE;
 
-  void RandomWeights();
-
   void SetInputSignal(double* input);
   void GetOutputSignal(double* output);
 
@@ -76,11 +74,14 @@ public:
   int Test(const char* fname);
   int Evaluate();
 
+  void RandomWeights();
+
   void Run(const char* fname, const int& maxiter);
   void Simulate(double* input, double* output, double* target, bool training);
 
   int GetLayerCount() const;
   void AddWeightsFrom(const MultiLayerPerceptron& other);
+  void cloneWeightsFrom(const MultiLayerPerceptron& other);
   void ScaleWeights(double factor);
   int GetLayerSize(int layer) const;
   double GetWeight(int layer, int neuron, int input) const;

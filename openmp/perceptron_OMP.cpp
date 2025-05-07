@@ -18,14 +18,16 @@
 #include <chrono>
 #include <cmath>
 #include <algorithm>
+#include <stdlib.h>
 #include <random>
 #include <omp.h>
 #include "../mlp/mlp.h"
+#include <string.h>
+
 
 using namespace std;
 
 const int MAX_EPOCHS = 100;
-const double LEARNING_RATE = 0.01;
 
 int mapStringToInt(const string& str, unordered_map<string,int>& dict, int& nextCode) {
     auto it = dict.find(str);
@@ -87,6 +89,44 @@ void normalize_data(vector<vector<double>>& X_train, vector<vector<double>>& X_t
     }
 }
 
+// Fixed serialization function
+void serialize(const MultiLayerPerceptron& mlp, vector<double>& buf) {
+    buf.clear();
+    int L = mlp.GetLayerCount();
+    for (int l = 1; l < L; ++l) {
+        int N = mlp.GetLayerSize(l);
+        int M = mlp.GetLayerSize(l - 1);
+        for (int i = 0; i < N; ++i) {
+            for (int j = 0; j < M; ++j) {
+                buf.push_back(mlp.GetWeight(l, i, j));
+            }
+            // Add bias (which is implicitly 0 in this implementation)
+            buf.push_back(0.0);
+        }
+    }
+}
+
+// Fixed deserialization function
+void deserialize(MultiLayerPerceptron& mlp, const vector<double>& buf) {
+    if (buf.empty()) return;
+    
+    int idx = 0;
+    int L = mlp.GetLayerCount();
+    for(int l = 1; l < L; ++l) {
+        int N = mlp.GetLayerSize(l);
+        int M = mlp.GetLayerSize(l - 1);
+        for(int i = 0; i < N; ++i) {
+            for(int j = 0; j < M; ++j) {
+                if (idx < buf.size()) {
+                    mlp.SetWeight(l, i, j, buf[idx++]);
+                }
+            }
+            // Skip bias value (not explicitly used in this implementation)
+            if (idx < buf.size()) idx++;
+        }
+    }
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         cerr << "Uso: " << argv[0] << " [num_threads] < data.txt" << endl;
@@ -121,54 +161,59 @@ int main(int argc, char* argv[]) {
     vector<vector<double>> X_train, X_test;
     vector<int> y_train, y_test;
     split_data(X, y, X_train, y_train, X_test, y_test);
-    normalize_data(X_train, X_test);
 
     int n_classes = *max_element(y.begin(), y.end()) + 1;
     int topology[] = { (int)dims, 24, n_classes };
 
     MultiLayerPerceptron central(3, topology);
-    central.dEta = LEARNING_RATE;
-    central.dAlpha = 0.9;
-    central.dGain = 1.0;
 
-    // Réplicas por thread
-    vector<MultiLayerPerceptron> replicas;
-    replicas.reserve(num_threads);
-    for (int t = 0; t < num_threads; ++t)
-        replicas.push_back(central);
 
-    vector<double> input(dims), output(n_classes), target(n_classes);
     int converged_epoch = MAX_EPOCHS;
     double sum_acc = 0.0;
-
+    
     auto t0 = chrono::high_resolution_clock::now();
 
     for (int epoch = 0; epoch < MAX_EPOCHS; ++epoch) {
         int hits = 0;
-        #pragma omp parallel firstprivate(input,output,target) reduction(+:hits)
+        vector<vector<double>> weights_buf(num_threads);
+
+        #pragma omp parallel reduction(+:hits) shared(X_train,y_train)
         {
+            vector<double> input(dims), output(n_classes), target(n_classes);
             int tid = omp_get_thread_num();
-            auto& mlp = replicas[tid];
+            MultiLayerPerceptron mlp(3, topology);
+            mlp.RandomWeights();
+            mlp.ScaleWeights(0.1 / num_threads);
+            mlp.AddWeightsFrom(central);
+            mlp.ScaleWeights(1.0 / (1.1 * num_threads));
+
             //int local_hits = 0;
             #pragma omp for schedule(static)
             for (int i = 0; i < (int)X_train.size(); ++i) {
-                for (size_t j = 0; j < dims; ++j) input[j] = X_train[i][j];
+                std::copy(X_train[i].begin(), X_train[i].end(), input.begin());
                 std::fill(target.begin(), target.end(), 0.0);
                 target[y_train[i]] = 1.0;
                 mlp.Simulate(input.data(), output.data(), target.data(), true);
+                
                 int pred = std::distance(output.begin(), std::max_element(output.begin(), output.end()));
                 if (pred == y_train[i]) hits++;
             }
+            serialize(mlp, weights_buf[tid]);
         }
+
+        central.ScaleWeights(0);
         // Agregar réplicas e normalizar
-        for (int t = 1; t < num_threads; ++t)
-            central.AddWeightsFrom(replicas[t]);
+        for (int t = 1; t < num_threads; ++t) {
+            MultiLayerPerceptron replica(3, topology);
+            deserialize(replica, weights_buf[t]);
+            central.AddWeightsFrom(replica);
+        }
         central.ScaleWeights(1.0 / num_threads);
-        // Sincronizar
-        for (int t = 0; t < num_threads; ++t)
-            replicas[t] = central;
+        
 
         double acc = 100.0 * hits / X_train.size();
+        cout << "Epoca " << epoch + 1 << "/" << MAX_EPOCHS << ": Acuracia = " << acc << "%" << endl;
+
         sum_acc += acc;
         if (acc >= 99.9) { converged_epoch = epoch + 1; break; }
     }
@@ -180,16 +225,6 @@ int main(int argc, char* argv[]) {
     cout << "Convergiu apos: " << converged_epoch << " epocas\n";
     cout << "Tempo de execucao (" << num_threads << " threads): " << elapsed << " ms\n";
 
-    // Teste sequencial
-    int test_hits = 0;
-    for (size_t i = 0; i < X_test.size(); ++i) {
-        for (size_t j = 0; j < dims; ++j) input[j] = X_test[i][j];
-        fill(target.begin(), target.end(), 0.0);
-        target[y_test[i]] = 1.0;
-        central.Simulate(input.data(), output.data(), target.data(), false);
-        int pred = distance(output.begin(), max_element(output.begin(), output.end()));
-        if (pred == y_test[i]) test_hits++;
-    }
-    cout << "Acuracia no teste: " << (100.0 * test_hits / X_test.size()) << "%\n";
+ 
     return 0;
 }

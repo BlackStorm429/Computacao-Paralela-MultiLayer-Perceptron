@@ -150,10 +150,6 @@ int main() {
     int topologia[] = { static_cast<int>(n_atributos), 24, n_classes };
     MultiLayerPerceptron mlp(3, topologia);
 
-    mlp.dEta = LEARNING_RATE;
-    mlp.dAlpha = 0.9;
-    mlp.dGain = 1.0;
-
     vector<double> input(n_atributos);
     vector<double> output(n_classes);
     vector<double> target(n_classes, 0.0);
@@ -171,9 +167,7 @@ int main() {
             fill(target.begin(), target.end(), 0.0);
             target[y_train[i]] = 1.0;
 
-            for (size_t j = 0; j < n_atributos; ++j) {
-                input[j] = X_train[i][j];
-            }
+            copy(X_train[i].begin(), X_train[i].end(), input.begin());
 
             mlp.Simulate(input.data(), output.data(), target.data(), true);
 
@@ -181,8 +175,10 @@ int main() {
             if (pred == y_train[i]) acertos++;
         }
 
+        
         double acc = static_cast<double>(acertos) / X_train.size() * 100.0;
         soma_acuracia += acc;
+        std::cout << "Epoca " << epoca + 1 << ": Acuracia = " << acc << "%" << std::endl;
 
         if (acc >= 99.9) {
             convergiu_em = epoca + 1;

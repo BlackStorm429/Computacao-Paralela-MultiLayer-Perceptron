@@ -31,14 +31,14 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <iostream>
 
 
 #include "mlp.h"
 
 void InitializeRandoms()
 {
-  //  srand( (unsigned)time( NULL ) );
-  srand(4711);
+  srand(time(0));
 }
 
 int RandomEqualINT(int Low, int High)
@@ -599,6 +599,22 @@ void MultiLayerPerceptron::AddWeightsFrom(const MultiLayerPerceptron& other) {
           for (int j = 0; j < M; ++j) {
               mine.w[j] += th.w[j];
               weights[l][i][j] += other.weights[l][i][j];
+          }
+      }
+  }
+}
+
+void MultiLayerPerceptron::cloneWeightsFrom(const MultiLayerPerceptron& other) {
+  // Para cada camada (exceto a de entrada):
+  for (int l = 1; l < nNumLayers; ++l) {
+      int N = pLayers[l].nNumNeurons;
+      int M = pLayers[l-1].nNumNeurons;
+      for (int i = 0; i < N; ++i) {
+          Neuron& mine   = pLayers[l].pNeurons[i];
+          const Neuron& th = other.pLayers[l].pNeurons[i];
+          for (int j = 0; j < M; ++j) {
+              mine.w[j] = th.w[j];
+              weights[l][i][j] = other.weights[l][i][j];
           }
       }
   }
