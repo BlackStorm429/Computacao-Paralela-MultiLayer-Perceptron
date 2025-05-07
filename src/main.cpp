@@ -106,13 +106,14 @@ void loadDB(const string& path, vector<vector<double>>& X, vector<vector<double>
 
 
 int main() {
-    // Define the network structure
-    int layers[] = {8, 6, 6, 1, 0}; // 0-terminated array
-
     // Load the dataset
     std::vector<std::vector<double>> inputs, expectedOutputs;
     loadDB("dataset/diabetes_balanced.csv", inputs, expectedOutputs);
-
+    
+    // Define the network structure
+    int numInputs = inputs[0].size();
+    int numOutputs = expectedOutputs[0].size();
+    int layers[] = {numInputs, 6, 6, numOutputs, 0}; // 0-terminated array
 
     // Create an instance of MLP
     MLP mlp(layers);

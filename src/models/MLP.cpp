@@ -5,7 +5,6 @@
 #include <cstdlib>
 #include <ctime>
 #include "IMLP.h"
-#include <omp.h>
 
 class MLP : public IMLP {
 private:
@@ -89,8 +88,7 @@ public:
             for (int i = 0; i < layers[l]; ++i) {
                 for (int j = 0; j < layers[l - 1]; ++j) {
                     weights[l - 1][i][j] += learningRate * deltas[l][i] * neurons[l - 1][j];
-                }
-                weights[l - 1][i][layers[l - 1]] += learningRate * deltas[l][i]; // bias
+                }      
             }
         }
     }

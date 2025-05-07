@@ -8,7 +8,7 @@ SRCS := $(wildcard $(SRC_DIR)/*.cpp)
 # Generate corresponding .o files.
 OBJS := $(SRCS:.cpp=.o)
 
-TARGET = main.cpp
+TARGET = main.out
 
 all: $(TARGET)
 
