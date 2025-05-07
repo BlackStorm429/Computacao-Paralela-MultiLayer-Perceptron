@@ -6,6 +6,7 @@
 #include <ctime>
 #include "IMLP.h"
 #include <algorithm>
+#include <random>
 
 // Tester class
 class MLPTester {
@@ -32,7 +33,7 @@ class MLPTester {
                                         }
 
                                         std::srand(static_cast<unsigned int>(std::time(nullptr)));
-                                        std::random_shuffle(indices.begin(), indices.end());
+                                        std::shuffle(indices.begin(), indices.end(), std::default_random_engine(std::rand()));
 
                                         size_t trainSize = static_cast<size_t>(total * trainRatio);
                                         for (size_t i = 0; i < total; ++i) {

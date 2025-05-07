@@ -25,8 +25,7 @@ private:
     }
 
     double computeNeuronInput(const std::vector<double>& prevLayer, const std::vector<double>& weightRow) {
-        double sum = weightRow[prevLayer.size()]; // bias
-
+        double sum = weightRow[prevLayer.size()];
         for (size_t i = 0; i < prevLayer.size(); ++i) {
             sum += weightRow[i] * prevLayer[i];
         }
@@ -53,11 +52,11 @@ public:
     }
 
     std::vector<double> forward(const std::vector<double>& input) {
-        if (input.size() != layers[0]) {
+        if ((int)input.size() != layers[0]) {
             throw std::invalid_argument("Input size does not match the first layer size.");
         }
         neurons[0] = input;
-        for (int i = 1; i < layers.size(); ++i) {
+        for (int i = 1; i < (int) layers.size(); ++i) {
             for (int j = 0; j < layers[i]; ++j) {
                 double sum = computeNeuronInput(neurons[i - 1], weights[i - 1][j]);
                 neurons[i][j] = activation(sum);
@@ -67,7 +66,7 @@ public:
     }
 
     void backward(const std::vector<double>& target) {
-        if (target.size() != layers.back()) {
+        if ((int)target.size() != layers.back()) {
             throw std::invalid_argument("Target size does not match the output layer size.");
         }
 

@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <cctype>
 #include <algorithm>
+#include <chrono>
 
 
 using namespace std;
@@ -106,18 +107,11 @@ void loadDB(const string& path, vector<vector<double>>& X, vector<vector<double>
 
 int main() {
     // Define the network structure
-    int layers[] = {8, 64, 64, 32, 16, 8, 4, 1, 0}; // 0-terminated array
+    int layers[] = {8, 6, 6, 1, 0}; // 0-terminated array
 
     // Load the dataset
     std::vector<std::vector<double>> inputs, expectedOutputs;
     loadDB("dataset/diabetes_balanced.csv", inputs, expectedOutputs);
-
-    //Print first row of the dataset
-    std::cout << "First row of the dataset: ";
-    for (const auto& val : inputs[0]) {
-        std::cout << val << " ";
-    }
-    std::cout << std::endl;
 
 
     // Create an instance of MLP
@@ -138,10 +132,12 @@ int main() {
     // Train the MLP
     int epochs = 1000;
     for (int i = 0; i < epochs; i++) {
+        //Start timer
+        auto start = std::chrono::high_resolution_clock::now();
         tester.train(1, Xtrain, Ytrain);
-        
-        std::cout << "Epoch " << i << " Accuracy: " << tester.accuracy(Xtest, Ytest) << std::endl;
-        
+        auto end = std::chrono::high_resolution_clock::now();
+        std::cout << "Epoch " << i << " Accuracy: " << tester.accuracy(Xtest, Ytest);
+        std::cout << " Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << "ms" << std::endl;
     }
 
 
