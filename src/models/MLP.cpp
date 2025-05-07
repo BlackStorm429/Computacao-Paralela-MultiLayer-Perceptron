@@ -33,7 +33,7 @@ private:
     }
 
 public:
-    MLP(const int* layerSizes) {
+    MLP(const int* layerSizes, double learningRate = 0.1) : learningRate(learningRate) {
         std::srand(static_cast<unsigned int>(std::time(0)));
         for (int i = 0; layerSizes[i] != 0; ++i) {
             layers.push_back(layerSizes[i]);
@@ -92,5 +92,15 @@ public:
                 }      
             }
         }
+    }
+
+    void train(const std::vector<std::vector<double>>& inputData,
+               const std::vector<std::vector<double>>& outputData) {
+       
+        for (size_t i = 0; i < inputData.size(); ++i) {
+            forward(inputData[i]);
+            backward(outputData[i]);
+        }
+        
     }
 };

@@ -3,10 +3,14 @@ CC = mpic++
 CFLAGS = -Wall -O2 -fopenmp -Iinclude
 
 SRC_DIR = src
+HDR_DIR = include
+
 # Compile every .cpp file in the src directory.
 SRCS := $(wildcard $(SRC_DIR)/*.cpp)
 # Generate corresponding .o files.
 OBJS := $(SRCS:.cpp=.o)
+# Dependency files generated alongside object files.
+DEPS := $(OBJS:.o=.d)
 
 TARGET = main.out
 
@@ -17,10 +21,13 @@ $(TARGET): $(OBJS)
 
 # Pattern rule to compile .cpp files into .o object files.
 %.o: %.cpp
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 run: $(TARGET)
 	./$(TARGET)
 
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(OBJS) $(TARGET) $(DEPS)
+
+# Include dependency files if they exist.
+-include $(DEPS)

@@ -7,6 +7,7 @@
 #include "IMLP.h"
 #include <algorithm>
 #include <random>
+#include <chrono>
 
 // Tester class
 class MLPTester {
@@ -15,61 +16,18 @@ class MLPTester {
     
     public:
 
-        static void splitTestTrain(const std::vector<std::vector<double>>& inputData, const std::vector<std::vector<double>>& outputData,
-                                   std::vector<std::vector<double>>& inputTrain, std::vector<std::vector<double>>& outputTrain,
-                                      std::vector<std::vector<double>>& inputTest, std::vector<std::vector<double>>& outputTest,
-                                   double trainRatio) {
-
-                                    {
-                                        size_t total = inputData.size();
-                                        if (total != outputData.size()) {
-                                            std::cerr << "Input and output data size mismatch." << std::endl;
-                                            return;
-                                        }
-
-                                        std::vector<size_t> indices(total);
-                                        for (size_t i = 0; i < total; ++i) {
-                                            indices[i] = i;
-                                        }
-
-                                        std::srand(static_cast<unsigned int>(std::time(nullptr)));
-                                        std::shuffle(indices.begin(), indices.end(), std::default_random_engine(std::rand()));
-
-                                        size_t trainSize = static_cast<size_t>(total * trainRatio);
-                                        for (size_t i = 0; i < total; ++i) {
-                                            if (i < trainSize) {
-                                                inputTrain.push_back(inputData[indices[i]]);
-                                                outputTrain.push_back(outputData[indices[i]]);
-                                            } else {
-                                                inputTest.push_back(inputData[indices[i]]);
-                                                outputTest.push_back(outputData[indices[i]]);
-                                            }
-                                        }
-                                    }
-                                   }
-
-
-        static void normalizeData(std::vector<std::vector<double>>& data) {
-            for (size_t i = 0; i < data.size(); ++i) {
-                double maxVal = *std::max_element(data[i].begin(), data[i].end());
-                double minVal = *std::min_element(data[i].begin(), data[i].end());
-                for (size_t j = 0; j < data[i].size(); ++j) {
-                    data[i][j] = (data[i][j] - minVal) / (maxVal - minVal);
-                }
-            }
-        }
-    
-
         MLPTester(IMLP& mlpInstance)
             : mlp(mlpInstance) {}
     
         void train(int epochs, std::vector<std::vector<double>>& inputs, std::vector<std::vector<double>>& expectedOutputs) {
-            for (int e = 0; e < epochs; ++e) {
-                for (size_t i = 0; i < inputs.size(); ++i) {
-                    mlp.forward(inputs[i]);
-                    mlp.backward(expectedOutputs[i]);
-                }
+            auto start = std::chrono::high_resolution_clock::now();
+            for (int i = 0; i < epochs; ++i) {
+                mlp.train(inputs, expectedOutputs);
+                std::cout << "Epoch: " << i + 1 << " Accuracy: " << accuracy(inputs, expectedOutputs) * 100 << "%" << std::endl;
             }
+            auto end = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+            std::cout << "Training completed in " << duration << " ms" << std::endl;
         }
 
     
@@ -79,13 +37,13 @@ class MLPTester {
             int correct = 0;
             for (size_t i = 0; i < testInputs.size(); ++i) {
                 std::vector<double> output = mlp.forward(testInputs[i]);
-                if (output.size() == 1) {
+                if (output.size() == 1) { // Binary classification
                     if (output[0] > 0.5 && expectedOutputs[i][0] == 1.0) {
                         correct++;
                     } else if (output[0] <= 0.5 && expectedOutputs[i][0] == 0.0) {
                         correct++;
                     }
-                } else {
+                } else { // Multi-class classification
                     int predicted = std::distance(output.begin(), std::max_element(output.begin(), output.end()));
                     int expected = std::distance(expectedOutputs[i].begin(), std::max_element(expectedOutputs[i].begin(), expectedOutputs[i].end()));
                     if (predicted == expected) {
