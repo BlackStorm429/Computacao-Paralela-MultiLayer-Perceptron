@@ -79,10 +79,18 @@ class MLPTester {
             int correct = 0;
             for (size_t i = 0; i < testInputs.size(); ++i) {
                 std::vector<double> output = mlp.forward(testInputs[i]);
-                if (output[0] > 0.5 && expectedOutputs[i][0] == 1.0) {
-                    correct++;
-                } else if (output[0] <= 0.5 && expectedOutputs[i][0] == 0.0) {
-                    correct++;
+                if (output.size() == 1) {
+                    if (output[0] > 0.5 && expectedOutputs[i][0] == 1.0) {
+                        correct++;
+                    } else if (output[0] <= 0.5 && expectedOutputs[i][0] == 0.0) {
+                        correct++;
+                    }
+                } else {
+                    int predicted = std::distance(output.begin(), std::max_element(output.begin(), output.end()));
+                    int expected = std::distance(expectedOutputs[i].begin(), std::max_element(expectedOutputs[i].begin(), expectedOutputs[i].end()));
+                    if (predicted == expected) {
+                        correct++;
+                    }
                 }
             }
 

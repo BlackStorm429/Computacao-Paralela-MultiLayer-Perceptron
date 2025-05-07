@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
+#include <omp.h>
 #include "IMLP.h"
 
 class MLP : public IMLP {
