@@ -54,8 +54,18 @@ int main(int argc, char* argv[]) {
     if (rank == 0) {
         loadDB("dataset/diabetes_balanced.csv", inputs, expectedOutputs);
         cout << "Dataset carregado com " << inputs.size() << " amostras\n";
+
+        // Repetir os dados 10 vezes
+        std::vector<std::vector<double>> repeatedInputs;
+        std::vector<std::vector<double>> repeatedOutputs;
+        for (int i = 0; i < 5; ++i) {
+            repeatedInputs.insert(repeatedInputs.end(), inputs.begin(), inputs.end());
+            repeatedOutputs.insert(repeatedOutputs.end(), expectedOutputs.begin(), expectedOutputs.end());
+        }
+        inputs = std::move(repeatedInputs);
+        expectedOutputs = std::move(repeatedOutputs);
+
     }
-    
     // Broadcast do tamanho dos dados para todos os processos
     int dataSize = 0;
     if (rank == 0) {
@@ -113,9 +123,9 @@ int main(int argc, char* argv[]) {
     MLPTester openMPTester(openMP);
     MLPTester mpiTester(mpi);
 
-    sequentialTester.train(1000, 0.95, Xtrain, Ytrain);
-    openMPTester.train(1000, 0.95, Xtrain, Ytrain);
-    mpiTester.train(1000, 0.95, Xtrain, Ytrain);
+    sequentialTester.train(1000, 0.85, Xtrain, Ytrain);
+    mpiTester.train(1000, 0.85, Xtrain, Ytrain);
+    openMPTester.train(1000, 0.85, Xtrain, Ytrain);
 
 
     return 0;
