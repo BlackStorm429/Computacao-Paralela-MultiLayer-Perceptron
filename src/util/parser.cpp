@@ -10,10 +10,9 @@
 #include <random>
 #include <ctime>
 
-
 using namespace std;
 
-vector<vector<string>> CSVparser(const string& path) {
+static vector<vector<string>> CSVparser(const string& path) {
     vector<vector<string>> data;
     ifstream file(path);
     string line;
@@ -32,7 +31,8 @@ vector<vector<string>> CSVparser(const string& path) {
     
     return data;
 }
-void normalizeData(vector<vector<double>>& data) {
+
+static void normalizeData(vector<vector<double>>& data) {
     int cols = data[0].size();
     for (int i = 0; i < cols; ++i) {
         double maxVal = data[0][i];
@@ -58,7 +58,7 @@ void normalizeData(vector<vector<double>>& data) {
     }
 }
 
-void loadDB(const string& path, vector<vector<double>>& X, vector<vector<double>>& Y) {
+static void loadDB(const string& path, vector<vector<double>>& X, vector<vector<double>>& Y) {
     vector<vector<string>> rawData = CSVparser(path);
     unordered_map<string, double> stringToDouble;
     double nextMapping = 0.0;
@@ -101,7 +101,7 @@ void loadDB(const string& path, vector<vector<double>>& X, vector<vector<double>
 }
 
 
-void splitTestTrain(const std::vector<std::vector<double>>& inputData, const std::vector<std::vector<double>>& outputData,
+static void splitTestTrain(const std::vector<std::vector<double>>& inputData, const std::vector<std::vector<double>>& outputData,
     std::vector<std::vector<double>>& inputTrain, std::vector<std::vector<double>>& outputTrain,
        std::vector<std::vector<double>>& inputTest, std::vector<std::vector<double>>& outputTest,
     double trainRatio) {
