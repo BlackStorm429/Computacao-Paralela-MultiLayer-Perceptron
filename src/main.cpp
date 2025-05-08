@@ -99,43 +99,11 @@ int main(int argc, char* argv[]) {
     
     std::vector<std::vector<double>> Xtrain, Xtest, Ytrain, Ytest;
 
-    // Split the data into training and testing sets - apenas no processo 0
-    if (rank == 0) {
-        splitTestTrain(inputs, expectedOutputs, Xtrain, Ytrain, Xtest, Ytest, 0.8);
-        cout << "Dados divididos: " << Xtrain.size() << " amostras de treino, " 
-             << Xtest.size() << " amostras de teste\n";
-    }
+
+    splitTestTrain(inputs, expectedOutputs, Xtrain, Ytrain, Xtest, Ytest, 0.8);
     
-    // Broadcast dos tamanhos para todos os processos
-    int trainSize = 0, testSize = 0;
-    if (rank == 0) {
-        trainSize = Xtrain.size();
-        testSize = Xtest.size();
-    }
-    MPI_Bcast(&trainSize, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&testSize, 1, MPI_INT, 0, MPI_COMM_WORLD);
     
-    // Processos não-zero inicializam seus vetores de treino/teste
-    if (rank != 0) {
-        Xtrain.resize(trainSize);
-        Ytrain.resize(trainSize);
-        Xtest.resize(testSize);
-        Ytest.resize(testSize);
-        
-        // Inicializa o tamanho dos vetores internos
-        int inputDim = 8;  // Diabetes dataset tem 8 features
-        int outputDim = 1;  // Uma saída (classificação binária)
-        
-        for (int i = 0; i < trainSize; i++) {
-            Xtrain[i].resize(inputDim);
-            Ytrain[i].resize(outputDim);
-        }
-        
-        for (int i = 0; i < testSize; i++) {
-            Xtest[i].resize(inputDim);
-            Ytest[i].resize(outputDim);
-        }
-    }
+   
     
     // Broadcast dos dados de treino/teste
     // Em uma implementação real, usando MPI_Bcast para todas as matrizes
@@ -145,49 +113,10 @@ int main(int argc, char* argv[]) {
     MLPTester openMPTester(openMP);
     MLPTester mpiTester(mpi);
 
-    // Calcular accuracy inicial apenas no processo 0
-    if (rank == 0) {
-        auto start = std::chrono::high_resolution_clock::now();
-        double initialAccuracy = mpiTester.accuracy(Xtest, Ytest);
-        auto end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> duration = end - start;
-        
-        std::cout << "MPI Initial Accuracy: " << initialAccuracy 
-                  << " (tempo: " << duration.count() << "s)" << std::endl;
-    }
+    sequentialTester.train(1000, 0.95, Xtrain, Ytrain);
+    openMPTester.train(1000, 0.95, Xtrain, Ytrain);
+    mpiTester.train(1000, 0.95, Xtrain, Ytrain);
 
-    // Treina usando MPI
-    auto startTrain = std::chrono::high_resolution_clock::now();
-    mpiTester.train(50, Xtrain, Ytrain);
-    auto endTrain = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> trainDuration = endTrain - startTrain;
-    
-    // Calcular accuracy final apenas no processo 0
-    if (rank == 0) {
-        auto startAccuracy = std::chrono::high_resolution_clock::now();
-        double finalAccuracy = mpiTester.accuracy(Xtest, Ytest);
-        auto endAccuracy = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> accuracyDuration = endAccuracy - startAccuracy;
-        
-        std::cout << "MPI Final Accuracy: " << finalAccuracy 
-                  << " (tempo treino: " << trainDuration.count() << "s, "
-                  << "tempo avaliação: " << accuracyDuration.count() << "s)" << std::endl;
-    }
 
-    // Apenas para comparação, se quisermos testar com OpenMP também
-    if (rank == 0) {
-        // Treina usando OpenMP
-        auto startOpenMP = std::chrono::high_resolution_clock::now();
-        openMPTester.train(50, Xtrain, Ytrain);
-        auto endOpenMP = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> openMPDuration = endOpenMP - startOpenMP;
-        
-        double openMPAccuracy = openMPTester.accuracy(Xtest, Ytest);
-        
-        std::cout << "OpenMP Final Accuracy: " << openMPAccuracy 
-                  << " (tempo treino: " << openMPDuration.count() << "s)" << std::endl;
-    }
-
-    MPI_Finalize();
     return 0;
 }

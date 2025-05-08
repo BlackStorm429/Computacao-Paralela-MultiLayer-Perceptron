@@ -8,10 +8,6 @@
 
 class MLP : public IMLP {
 private:
-    std::vector<int> layers;
-    std::vector<std::vector<double>> neurons;
-    std::vector<std::vector<std::vector<double>>> weights;
-    std::vector<std::vector<double>> deltas;
 
     double learningRate = 0.1;
 
@@ -32,6 +28,11 @@ private:
     }
 
 public:
+    std::vector<int> layers;
+    std::vector<std::vector<double>> neurons;
+    std::vector<std::vector<std::vector<double>>> weights;
+    std::vector<std::vector<double>> deltas;
+
     MLP(const int* layerSizes, double learningRate = 0.1) : learningRate(learningRate) {
         std::srand(static_cast<unsigned int>(std::time(0)));
         for (int i = 0; layerSizes[i] != 0; ++i) {
@@ -50,6 +51,14 @@ public:
         }
     }
 
+    MLP(const MLP& other)
+        : layers(other.layers),
+          neurons(other.neurons),
+          weights(other.weights),
+          deltas(other.deltas),
+          learningRate(other.learningRate) {
+    }
+
     std::vector<double> forward(const std::vector<double>& input) {
         if ((int)input.size() != layers[0]) {
             throw std::invalid_argument("Input size does not match the first layer size.");
@@ -63,6 +72,23 @@ public:
         }
         return neurons.back();
     }
+
+    double loss(const std::vector<double>& input, const std::vector<double>& target) {
+        if ((int)input.size() != layers[0]) {
+            throw std::invalid_argument("Input size does not match the first layer size.");
+        }
+        if ((int)target.size() != layers.back()) {
+            throw std::invalid_argument("Target size does not match the output layer size.");
+        }
+        forward(input);
+        double totalLoss = 0.0;
+        for (size_t i = 0; i < target.size(); ++i) {
+            totalLoss += 0.5 * std::pow(target[i] - neurons.back()[i], 2);
+        }
+        return totalLoss;
+    }
+
+    
 
     void backward(const std::vector<double>& target) {
         if ((int)target.size() != layers.back()) {

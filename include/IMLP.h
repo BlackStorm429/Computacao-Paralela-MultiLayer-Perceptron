@@ -10,5 +10,6 @@ public:
     virtual void backward(const std::vector<double>& target) = 0;
     virtual void train(const std::vector<std::vector<double>>& inputData,
                     const std::vector<std::vector<double>>& outputData) = 0;
+    
     virtual ~IMLP() = default;
 };

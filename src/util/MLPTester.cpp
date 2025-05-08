@@ -18,11 +18,16 @@ class MLPTester {
         MLPTester(IMLP& mlpInstance)
             : mlp(mlpInstance) {}
     
-        void train(int epochs, std::vector<std::vector<double>>& inputs, std::vector<std::vector<double>>& expectedOutputs) {
+        void train(int epochs, double accuracy_limit, std::vector<std::vector<double>>& inputs, std::vector<std::vector<double>>& expectedOutputs) {
             auto start = std::chrono::high_resolution_clock::now();
             for (int i = 0; i < epochs; ++i) {
                 mlp.train(inputs, expectedOutputs);
-                std::cout << "Epoch: " << i + 1 << " Accuracy: " << accuracy(inputs, expectedOutputs) * 100 << "%" << std::endl;
+                double acc = accuracy(inputs, expectedOutputs);
+                std::cout << "Epoch: " << i + 1 << " Accuracy: " << acc* 100 << "%" << std::endl;
+                if (acc >= accuracy_limit) {
+                    std::cout << "Accuracy limit reached. Stopping training." << std::endl;
+                    break;
+                }
             }
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
