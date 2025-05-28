@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
-#include <mpi/mpi.h>
+#include <mpi.h>
 #include "IMLP.h"
 #include "MLP_OpenMP.cpp"
 

@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
     // Load the dataset - apenas o processo 0 carrega os dados
     std::vector<std::vector<double>> inputs, expectedOutputs;
     if (rank == 0) {
-        loadDogsCats("dataset/dogs_cats", 64, 64, inputs, expectedOutputs);
+        loadDB("dataset/diabetes_balanced.csv", inputs, expectedOutputs);
         cout << "Dataset carregado com " << inputs.size() << " amostras\n";
     }
     
@@ -60,29 +60,30 @@ int main(int argc, char* argv[]) {
     std::vector<std::vector<double>> Xtrain, Xtest, Ytrain, Ytest;
     splitTestTrain(inputs, expectedOutputs, Xtrain, Ytrain, Xtest, Ytest, 0.8);
     
-    int layers[] = {64*64, 32*32, 32*32, 2, 0}; // 0-terminated array
-    
-    // Create an instance of openMP MLP
+    int layers[] = {8, 6, 6, 1, 0}; // 0-terminated array
     
     
     {
+        std::cout << "MLP Sequêncial:\n";
         MLP mlp(layers, 0.01);
         MLPTester sequentialTester(mlp);
-        sequentialTester.train(1000, 0.75, Xtrain, Ytrain);
+        sequentialTester.train(1000, 0.85, Xtrain, Ytrain);
     }
     
     
     {
+        std::cout << "MLP OpenMP:\n";
         MLP_OpenMP openMP(layers, 0.01, 2);
         MLPTester openMPTester(openMP);
-        openMPTester.train(1000, 0.75, Xtrain, Ytrain);
+        openMPTester.train(1000, 0.85, Xtrain, Ytrain);
     }
     
 
     {
+        std::cout << "MLP MPI:\n";
         MLP_MPI mpi(layers, 0.01);
         MLPTester mpiTester(mpi);
-        mpiTester.train(1000, 0.75, Xtrain, Ytrain);
+        mpiTester.train(1000, 0.85, Xtrain, Ytrain);
     }
     
     
