@@ -32,9 +32,7 @@ public:
         return openMP.forward(input);
     }
     
-    void backward(const std::vector<double>& target) {
-        return openMP.backward(target);
-    }
+
     
 
 void train(const std::vector<std::vector<double>>& inputData,

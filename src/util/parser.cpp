@@ -172,3 +172,52 @@ static void loadDogsCats(const string& path, int width, int height, vector<vecto
         }
     }
 }
+
+static void loadMNist(const std::string& imagesPath, const std::string& labelsPath, std::vector<std::vector<double>>& X, std::vector<std::vector<double>>& Y) {
+    std::ifstream imagesFile(imagesPath, std::ios::binary);
+    std::ifstream labelsFile(labelsPath, std::ios::binary);
+    if (!imagesFile) {
+        throw std::runtime_error("Unable to open MNist images file: " + imagesPath);
+    }
+    if (!labelsFile) {
+        throw std::runtime_error("Unable to open MNist labels file: " + labelsPath);
+    }
+
+    auto readInt = [](std::ifstream& stream) -> int {
+        unsigned char bytes[4];
+        stream.read(reinterpret_cast<char*>(bytes), 4);
+        return (int(bytes[0]) << 24) | (int(bytes[1]) << 16) | (int(bytes[2]) << 8) | int(bytes[3]);
+    };
+
+    int magicImages = readInt(imagesFile);
+    int numImages   = readInt(imagesFile);
+    int numRows     = readInt(imagesFile);
+    int numCols     = readInt(imagesFile);
+
+    int magicLabels = readInt(labelsFile);
+    int numLabels   = readInt(labelsFile);
+
+    if (numImages != numLabels) {
+        throw std::runtime_error("Mismatch between number of images and labels in MNist data.");
+    }
+
+    int imageSize = numRows * numCols;
+    for (int i = 0; i < numImages; ++i) {
+        std::vector<double> image;
+        image.reserve(imageSize);
+        for (int j = 0; j < imageSize; ++j) {
+            unsigned char pixel;
+            imagesFile.read(reinterpret_cast<char*>(&pixel), sizeof(pixel));
+            image.push_back(static_cast<double>(pixel) / 255.0);
+        }
+        X.push_back(image);
+
+        unsigned char label;
+        labelsFile.read(reinterpret_cast<char*>(&label), sizeof(label));
+        std::vector<double> oneHot(10, 0.0);
+        if (label < 10) {
+            oneHot[label] = 1.0;
+        }
+        Y.push_back(oneHot);
+    }
+}

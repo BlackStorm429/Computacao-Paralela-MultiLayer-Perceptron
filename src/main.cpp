@@ -1,8 +1,6 @@
 #include "util/MLPTester.cpp"
 #include "util/parser.cpp"
 #include "models/MLP.cpp"
-#include "models/MLP_OpenMP.cpp"
-#include "models/MLP_MPI.cpp"
 
 #include <iostream>
 #include <vector>
@@ -52,39 +50,44 @@ int main(int argc, char* argv[]) {
     // Load the dataset - apenas o processo 0 carrega os dados
     std::vector<std::vector<double>> inputs, expectedOutputs;
     if (rank == 0) {
-        loadDB("dataset/diabetes_balanced.csv", inputs, expectedOutputs);
+        loadMNist("dataset/mnist/t10k-images.idx3-ubyte", "dataset/mnist/t10k-labels.idx1-ubyte", inputs, expectedOutputs);
         cout << "Dataset carregado com " << inputs.size() << " amostras\n";
     }
-    
+
+
+    int inputSize = inputs[0].size();
+    int outputSize = expectedOutputs[0].size();
+    std::cout << "Tamanho da entrada: " << inputSize << ", Tamanho da saída: " << outputSize << std::endl;
     
     std::vector<std::vector<double>> Xtrain, Xtest, Ytrain, Ytest;
     splitTestTrain(inputs, expectedOutputs, Xtrain, Ytrain, Xtest, Ytest, 0.8);
     
-    int layers[] = {8, 6, 6, 1, 0}; // 0-terminated array
+    
+    int layers[] = {inputSize, inputSize/4, inputSize/8, outputSize, 0}; // 0-terminated array
     
     
     {
         std::cout << "MLP Sequêncial:\n";
-        MLP mlp(layers, 0.01);
+        MLP mlp(layers, 0.01, 100);
         MLPTester sequentialTester(mlp);
-        sequentialTester.train(1000, 0.85, Xtrain, Ytrain);
+        sequentialTester.train(10000, 0.2, Xtrain, Ytrain);
     }
     
     
-    {
-        std::cout << "MLP OpenMP:\n";
-        MLP_OpenMP openMP(layers, 0.01, 2);
-        MLPTester openMPTester(openMP);
-        openMPTester.train(1000, 0.85, Xtrain, Ytrain);
-    }
+    // {
+    //     std::cout << "MLP OpenMP:\n";
+    //     MLP_OpenMP openMP(layers, 0.01, omp_get_max_threads());
+    //     MLPTester openMPTester(openMP);
+    //     openMPTester.train(10000, 0.2, Xtrain, Ytrain);
+    // }
     
 
-    {
-        std::cout << "MLP MPI:\n";
-        MLP_MPI mpi(layers, 0.01);
-        MLPTester mpiTester(mpi);
-        mpiTester.train(1000, 0.85, Xtrain, Ytrain);
-    }
+    // {
+    //     std::cout << "MLP MPI:\n";
+    //     MLP_MPI mpi(layers, 0.01);
+    //     MLPTester mpiTester(mpi);
+    //     mpiTester.train(10000, 0.2, Xtrain, Ytrain);
+    // }
     
     
     return 0;
