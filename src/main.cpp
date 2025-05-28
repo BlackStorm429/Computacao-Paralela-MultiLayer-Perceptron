@@ -52,81 +52,39 @@ int main(int argc, char* argv[]) {
     // Load the dataset - apenas o processo 0 carrega os dados
     std::vector<std::vector<double>> inputs, expectedOutputs;
     if (rank == 0) {
-        loadDB("dataset/diabetes_balanced.csv", inputs, expectedOutputs);
+        loadDogsCats("dataset/dogs_cats", 64, 64, inputs, expectedOutputs);
         cout << "Dataset carregado com " << inputs.size() << " amostras\n";
-
-        // Repetir os dados 10 vezes
-        std::vector<std::vector<double>> repeatedInputs;
-        std::vector<std::vector<double>> repeatedOutputs;
-        for (int i = 0; i < 5; ++i) {
-            repeatedInputs.insert(repeatedInputs.end(), inputs.begin(), inputs.end());
-            repeatedOutputs.insert(repeatedOutputs.end(), expectedOutputs.begin(), expectedOutputs.end());
-        }
-        inputs = std::move(repeatedInputs);
-        expectedOutputs = std::move(repeatedOutputs);
-
-    }
-    // Broadcast do tamanho dos dados para todos os processos
-    int dataSize = 0;
-    if (rank == 0) {
-        dataSize = inputs.size();
-    }
-    MPI_Bcast(&dataSize, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    
-    // Processos não-zero inicializam seus vetores com o tamanho correto
-    if (rank != 0) {
-        inputs.resize(dataSize);
-        expectedOutputs.resize(dataSize);
-        
-        // Inicializa o tamanho dos vetores internos
-        // (apenas como exemplo, em uma implementação real precisaríamos transferir os dados)
-        if (dataSize > 0) {
-            int inputDim = 8;  // Diabetes dataset tem 8 features
-            int outputDim = 1;  // Uma saída (classificação binária)
-            
-            for (int i = 0; i < dataSize; i++) {
-                inputs[i].resize(inputDim);
-                expectedOutputs[i].resize(outputDim);
-            }
-        }
     }
     
-    // Broadcast dos dados para todos os processos
-    // Numa implementação completa, faria broadcast real dos dados
-    // Este é um ponto onde MPI seria necessário para compartilhar os dados
-    // entre os processos. Para simplicidade, estamos assumindo que todos os processos têm os dados.
-    
-    int layers[] = {8, 6, 6, 1, 0}; // 0-terminated array
-
-    // Create an instance of sequencial MLP
-    MLP mlp(layers, 0.0001);
-
-    // Create an instance of openMP MLP
-    MLP_OpenMP openMP(layers, 0.0001);
-
-    // Create an instance of MPI MLP
-    MLP_MPI mpi(layers, 0.0001);
     
     std::vector<std::vector<double>> Xtrain, Xtest, Ytrain, Ytest;
-
-
     splitTestTrain(inputs, expectedOutputs, Xtrain, Ytrain, Xtest, Ytest, 0.8);
     
+    int layers[] = {64*64, 32*32, 32*32, 2, 0}; // 0-terminated array
     
-   
+    // Create an instance of openMP MLP
     
-    // Broadcast dos dados de treino/teste
-    // Em uma implementação real, usando MPI_Bcast para todas as matrizes
     
-    // Create tester instances
-    MLPTester sequentialTester(mlp);
-    MLPTester openMPTester(openMP);
-    MLPTester mpiTester(mpi);
+    {
+        MLP mlp(layers, 0.01);
+        MLPTester sequentialTester(mlp);
+        sequentialTester.train(1000, 0.75, Xtrain, Ytrain);
+    }
+    
+    
+    {
+        MLP_OpenMP openMP(layers, 0.01, 2);
+        MLPTester openMPTester(openMP);
+        openMPTester.train(1000, 0.75, Xtrain, Ytrain);
+    }
+    
 
-    sequentialTester.train(1000, 0.85, Xtrain, Ytrain);
-    mpiTester.train(1000, 0.85, Xtrain, Ytrain);
-    openMPTester.train(1000, 0.85, Xtrain, Ytrain);
-
-
+    {
+        MLP_MPI mpi(layers, 0.01);
+        MLPTester mpiTester(mpi);
+        mpiTester.train(1000, 0.75, Xtrain, Ytrain);
+    }
+    
+    
     return 0;
 }
