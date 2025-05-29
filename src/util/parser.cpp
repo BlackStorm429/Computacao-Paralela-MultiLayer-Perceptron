@@ -1,4 +1,3 @@
-#include <filesystem>
 #include <vector>
 #include <fstream>
 #include <sstream>
@@ -131,46 +130,6 @@ static void splitTestTrain(const std::vector<std::vector<double>>& inputData, co
             outputTest.push_back(outputData[indices[i]]);
         }
     }  
-}
-
-static void loadDogsCats(const string& path, int width, int height, vector<vector<double>>& X, vector<vector<double>>& Y) {
-    const int numPixels = width * height;
-
-    // Map subdirectory name to label
-    unordered_map<string, vector<double>> labelMap = {{"dogs", {1.0,0.0}}, {"cats", {0.0,1.0}}};
-
-    for (const auto& [subdir, label] : labelMap) {
-        std::filesystem::path dirPath = std::filesystem::path(path) / subdir;
-        if (!std::filesystem::exists(dirPath) || !std::filesystem::is_directory(dirPath)) {
-            cerr << "Directory not found: " << dirPath << endl;
-            continue;
-        }
-        for (const auto& entry : std::filesystem::directory_iterator(dirPath)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".raw") {
-                ifstream file(entry.path(), ios::binary);
-                if (!file) {
-                    cerr << "Unable to open file: " << entry.path() << endl;
-                    continue;
-                }
-                vector<double> image;
-                image.reserve(numPixels);
-                for (int i = 0; i < numPixels; ++i) {
-                    unsigned char pixel;
-                    file.read(reinterpret_cast<char*>(&pixel), sizeof(pixel));
-                    if (file.gcount() != sizeof(pixel)) {
-                        cerr << "Incomplete read for file: " << entry.path() << endl;
-                        break;
-                    }
-                    // Normalize pixel value in [0, 1]
-                    image.push_back(static_cast<double>(pixel) / 255.0);
-                }
-                if (image.size() == numPixels) {
-                    X.push_back(image);
-                    Y.push_back({label});
-                }
-            }
-        }
-    }
 }
 
 static void loadMNist(const std::string& imagesPath, const std::string& labelsPath, std::vector<std::vector<double>>& X, std::vector<std::vector<double>>& Y) {
