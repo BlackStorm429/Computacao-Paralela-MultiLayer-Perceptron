@@ -68,9 +68,9 @@ int main(int argc, char* argv[]) {
     
     {
         std::cout << "MLP Sequêncial:\n";
-        MLP mlp(layers, 0.01, 100);
+        MLP mlp(layers, 100, 0.01);
         MLPTester sequentialTester(mlp);
-        sequentialTester.train(10000, 0.2, Xtrain, Ytrain);
+        sequentialTester.train(10000, 0.15, Xtrain, Ytrain);
     }
     
     

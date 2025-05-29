@@ -22,7 +22,9 @@ class MLPTester {
             auto start = std::chrono::high_resolution_clock::now();
             for (int i = 0; i < epochs; ++i) {
                 auto start_epoch = std::chrono::high_resolution_clock::now();
+               
                 mlp.train(inputs, expectedOutputs);
+
                 auto end_epoch = std::chrono::high_resolution_clock::now();
                 auto duration_epoch = std::chrono::duration_cast<std::chrono::milliseconds>(end_epoch - start_epoch).count();
                 double loss_avg = loss(inputs, expectedOutputs);
