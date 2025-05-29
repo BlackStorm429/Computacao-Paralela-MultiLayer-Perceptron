@@ -1,22 +1,33 @@
-.PHONY: all openmp mpi seq
+# Compiler: use the MPI C++ wrapper which links MPI libraries.
+CC = mpic++
+CFLAGS = -Wall -O2 -fopenmp -Iinclude 
 
-all: openmp mpi seq
+SRC_DIR = src
+HDR_DIR = include
 
-openmp:
-	$(MAKE) -C openmp all
+# Compile every .cpp file in the src directory.
+SRCS := $(wildcard $(SRC_DIR)/*.cpp)
+# Generate corresponding .o files.
+OBJS := $(SRCS:.cpp=.o)
+# Dependency files generated alongside object files.
+DEPS := $(OBJS:.o=.d)
 
-mpi:
-	$(MAKE) -C mpi all
+TARGET = main.out
 
-seq:
-	$(MAKE) -C seq all
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) $^ -o $@
+
+# Pattern rule to compile .cpp files into .o object files.
+%.o: %.cpp
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
+
+run: $(TARGET)
+	./$(TARGET)
 
 clean:
-	$(MAKE) -C openmp clean
-	$(MAKE) -C mpi clean
-	$(MAKE) -C seq clean
+	rm -f $(OBJS) $(TARGET) $(DEPS)
 
-run:
-	$(MAKE) -C openmp run
-	$(MAKE) -C mpi run
-	$(MAKE) -C seq run
+# Include dependency files if they exist.
+-include $(DEPS)
