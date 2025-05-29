@@ -1,6 +1,7 @@
 #include "util/MLPTester.cpp"
 #include "util/parser.cpp"
 #include "models/MLP.cpp"
+#include "models/MLP_OpenMP.cpp"
 
 #include <iostream>
 #include <vector>
@@ -64,22 +65,28 @@ int main(int argc, char* argv[]) {
     
     
     int layers[] = {inputSize, inputSize/4, inputSize/8, outputSize, 0}; // 0-terminated array
+    MLP mlp(layers, 400, 0.01);
+    int64_t sequential_duration, openmp_duration, mpi_duration;
     
+    {
+        std::cout << "MLP OpenMP:\n";
+        MLP_OpenMP openMP(mlp, 4);
+        MLPTester openMPTester(openMP);
+        openmp_duration = openMPTester.train(1000, 0.15, Xtrain, Ytrain);
+    }
     
     {
         std::cout << "MLP Sequêncial:\n";
-        MLP mlp(layers, 100, 0.01);
         MLPTester sequentialTester(mlp);
-        sequentialTester.train(10000, 0.15, Xtrain, Ytrain);
+        sequential_duration = sequentialTester.train(1000, 0.15, Xtrain, Ytrain);
     }
+
+    std::cout << "Duração do treinamento sequencial: " << sequential_duration << " ms\n";
+    std::cout << "Duração do treinamento OpenMP: " << openmp_duration << " ms\n";
+
+    std::cout << "Speedup:\n";
+    std::cout << "OpenMP: " << static_cast<double>(sequential_duration) / openmp_duration << "x\n";
     
-    
-    // {
-    //     std::cout << "MLP OpenMP:\n";
-    //     MLP_OpenMP openMP(layers, 0.01, omp_get_max_threads());
-    //     MLPTester openMPTester(openMP);
-    //     openMPTester.train(10000, 0.2, Xtrain, Ytrain);
-    // }
     
 
     // {

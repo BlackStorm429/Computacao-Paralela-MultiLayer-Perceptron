@@ -71,6 +71,11 @@ public:
       }
    }
 
+   MLP(const MLP& other) 
+      : layers(other.layers), neuronOffsets(other.neuronOffsets), weightOffsets(other.weightOffsets),
+        neurons(other.neurons), deltas(other.deltas), weights(other.weights), accumulated_gradients(other.accumulated_gradients),
+        learningRate(other.learningRate), batchSize(other.batchSize) {}
+
    std::vector<double> forward(const std::vector<double>& input) {
       if ((int)input.size() != layers[0]) {
          throw std::invalid_argument("Input size does not match the first layer size.");

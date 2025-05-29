@@ -18,7 +18,7 @@ class MLPTester {
         MLPTester(IMLP& mlpInstance)
             : mlp(mlpInstance) {}
     
-        void train(int epochs, double acc_limit, std::vector<std::vector<double>>& inputs, std::vector<std::vector<double>>& expectedOutputs) {
+        auto train(int epochs, double acc_limit, std::vector<std::vector<double>>& inputs, std::vector<std::vector<double>>& expectedOutputs) {
             auto start = std::chrono::high_resolution_clock::now();
             for (int i = 0; i < epochs; ++i) {
                 auto start_epoch = std::chrono::high_resolution_clock::now();
@@ -38,11 +38,13 @@ class MLPTester {
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
             std::cout << "Training completed in " << duration << " ms" << std::endl;
+            return duration;
         }
 
 
         double loss(const std::vector<std::vector<double>>& inputData, const std::vector<std::vector<double>>& outputData) {
             double total_loss = 0.0;
+            
             for (size_t i = 0; i < inputData.size(); ++i) {
                 total_loss += mlp.loss(inputData[i], outputData[i]);
             }
@@ -53,6 +55,8 @@ class MLPTester {
                   const std::vector<std::vector<double>>& expectedOutputs) {
 
             int correct = 0;
+            
+        
             for (size_t i = 0; i < testInputs.size(); ++i) {
                 std::vector<double> output = mlp.forward(testInputs[i]);
                 if (output.size() == 1) { // Binary classification
