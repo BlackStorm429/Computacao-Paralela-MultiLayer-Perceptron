@@ -19,7 +19,7 @@ class MLPTester {
             : mlp(mlpInstance) {}
     
         auto train(int epochs, double acc_limit, std::vector<std::vector<double>>& inputs, std::vector<std::vector<double>>& expectedOutputs) {
-            auto start = std::chrono::high_resolution_clock::now();
+            int64_t total_duration = 0;
             for (int i = 0; i < epochs; ++i) {
                 auto start_epoch = std::chrono::high_resolution_clock::now();
                
@@ -27,6 +27,7 @@ class MLPTester {
 
                 auto end_epoch = std::chrono::high_resolution_clock::now();
                 auto duration_epoch = std::chrono::duration_cast<std::chrono::milliseconds>(end_epoch - start_epoch).count();
+                total_duration += duration_epoch;
                 double loss_avg = loss(inputs, expectedOutputs);
                 double acc = accuracy(inputs, expectedOutputs);
                 std::cout << "Epoch: " << i + 1 << " Loss: " << loss_avg  << " Accuracy: " << acc * 100 << "% " << " in " << duration_epoch << " ms" << std::endl;
@@ -35,10 +36,8 @@ class MLPTester {
                     break;
                 }
             }
-            auto end = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-            std::cout << "Training completed in " << duration << " ms" << std::endl;
-            return duration;
+            std::cout << "Training completed in " << total_duration << " ms" << std::endl;
+            return total_duration;
         }
 
 

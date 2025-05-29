@@ -67,7 +67,7 @@ int main(int argc, char* argv[]) {
     int layers[] = {inputSize, inputSize/4, inputSize/8, outputSize, 0}; // 0-terminated array
     MLP mlp(layers, 400, 0.01);
     int64_t sequential_duration, openmp_duration, mpi_duration;
-    
+
     {
         std::cout << "MLP OpenMP:\n";
         MLP_OpenMP openMP(mlp, 4);
