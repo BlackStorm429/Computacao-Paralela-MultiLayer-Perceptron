@@ -2,6 +2,7 @@
 #include "util/parser.cpp"
 #include "models/MLP.cpp"
 #include "models/MLP_OpenMP.cpp"
+#include "models/MLP_MPI.cpp"
 
 #include <iostream>
 #include <vector>
@@ -55,7 +56,6 @@ int main(int argc, char* argv[]) {
         cout << "Dataset carregado com " << inputs.size() << " amostras\n";
     }
 
-
     int inputSize = inputs[0].size();
     int outputSize = expectedOutputs[0].size();
     std::cout << "Tamanho da entrada: " << inputSize << ", Tamanho da saída: " << outputSize << std::endl;
@@ -86,16 +86,13 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Speedup:\n";
     std::cout << "OpenMP: " << static_cast<double>(sequential_duration) / openmp_duration << "x\n";
-    
-    
 
-    // {
-    //     std::cout << "MLP MPI:\n";
-    //     MLP_MPI mpi(layers, 0.01);
-    //     MLPTester mpiTester(mpi);
-    //     mpiTester.train(10000, 0.2, Xtrain, Ytrain);
-    // }
-    
-    
+    {
+        std::cout << "MLP MPI:\n";
+        MLP_MPI mpi(layers, 0.01, 400, 2);
+        MLPTester mpiTester(mpi);
+        mpiTester.train(10000, 0.2, Xtrain, Ytrain);
+    }
+     
     return 0;
 }

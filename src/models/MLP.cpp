@@ -35,7 +35,7 @@ protected:
    }
 
 public:
-   std::vector<int> layers;
+   std::vector<std::size_t> layers;
    std::vector<int> neuronOffsets;
    std::vector<int> weightOffsets;
 
@@ -72,9 +72,10 @@ public:
    }
 
    MLP(const MLP& other) 
-      : layers(other.layers), neuronOffsets(other.neuronOffsets), weightOffsets(other.weightOffsets),
-        neurons(other.neurons), deltas(other.deltas), weights(other.weights), accumulated_gradients(other.accumulated_gradients),
-        learningRate(other.learningRate), batchSize(other.batchSize) {}
+      : learningRate(other.learningRate), batchSize(other.batchSize), 
+        layers(other.layers), neuronOffsets(other.neuronOffsets), weightOffsets(other.weightOffsets), 
+        neurons(other.neurons), deltas(other.deltas), weights(other.weights),
+        accumulated_gradients(other.accumulated_gradients) {}
 
    std::vector<double> forward(const std::vector<double>& input) {
       if ((int)input.size() != layers[0]) {
@@ -159,7 +160,8 @@ public:
    }
 
     double loss(const std::vector<double>& input, const std::vector<double>& target) override {
-        if (input.size() != layers[0] || target.size() != layers.back()) {
+        if (input.size() != static_cast<std::size_t>(layers[0]) || 
+            target.size() != static_cast<std::size_t>(layers.back())) {
             throw std::invalid_argument("Input or target size does not match the network.");
         }
         forward(input);

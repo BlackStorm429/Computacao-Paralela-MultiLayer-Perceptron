@@ -148,13 +148,26 @@ static void loadMNist(const std::string& imagesPath, const std::string& labelsPa
         return (int(bytes[0]) << 24) | (int(bytes[1]) << 16) | (int(bytes[2]) << 8) | int(bytes[3]);
     };
 
-    int magicImages = readInt(imagesFile);
+    // int numImages   = readInt(imagesFile);
+    // int numRows     = readInt(imagesFile);
+    // int numCols     = readInt(imagesFile);
+
+    // int numLabels   = readInt(labelsFile);
+
+    // imagens: magic, count, rows, cols
+    int magicI      = readInt(imagesFile);
     int numImages   = readInt(imagesFile);
     int numRows     = readInt(imagesFile);
     int numCols     = readInt(imagesFile);
 
-    int magicLabels = readInt(labelsFile);
+    // labels: magic, count
+    int magicL      = readInt(labelsFile);
     int numLabels   = readInt(labelsFile);
+
+    // DEBUG (remova depois)
+    std::cerr << "[MNIST] magicI="<<magicI<<" numImages="<<numImages
+              <<" rows="<<numRows<<" cols="<<numCols
+              <<" | magicL="<<magicL<<" numLabels="<<numLabels<<"\n";
 
     if (numImages != numLabels) {
         throw std::runtime_error("Mismatch between number of images and labels in MNist data.");

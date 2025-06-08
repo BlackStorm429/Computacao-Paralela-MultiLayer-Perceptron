@@ -29,7 +29,6 @@ public:
         }
     }
 
-
     void train(const std::vector<std::vector<double>>& inputData,
                const std::vector<std::vector<double>>& outputData) override {
         if (inputData.empty() || outputData.empty() || inputData.size() != outputData.size()) {
@@ -40,7 +39,6 @@ public:
         zero_gradients();
         for (int k = 0; k < (int)inputData.size(); k += batchSize) {
             int current_batch_size = std::min(batchSize, (int)inputData.size() - k);
-            int samples_per_thread = current_batch_size / numThreads;
             
             #pragma omp parallel num_threads(numThreads)
             {
@@ -54,14 +52,12 @@ public:
                     local_mlp.compute_and_accumulate_gradients(outputData[k + i]);
                     
                 }
-                
-                
+                 
                 std::copy(local_mlp.accumulated_gradients.begin(), local_mlp.accumulated_gradients.end(), 
                             thread_gradients[tid].begin());
                 
             }
 
-            
             for (size_t j = 0; j < accumulated_gradients.size(); ++j) {
                 accumulated_gradients[j] = 0.0;
                 for (int t = 0; t < numThreads; ++t) {
