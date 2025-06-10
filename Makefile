@@ -7,8 +7,10 @@ HDR_DIR = include
 
 # Compile every .cpp file in the src directory.
 SRCS := $(wildcard $(SRC_DIR)/*.cpp)
+
 # Generate corresponding .o files.
 OBJS := $(SRCS:.cpp=.o)
+
 # Dependency files generated alongside object files.
 DEPS := $(OBJS:.o=.d)
 
