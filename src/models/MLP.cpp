@@ -43,7 +43,7 @@ class MLP : public IMLP {
       }
 
    public:
-      std::vector<std::size_t> layers;
+      std::vector<int> layers;
 
       std::vector<int> neuronOffsets;
       std::vector<int> weightOffsets;
