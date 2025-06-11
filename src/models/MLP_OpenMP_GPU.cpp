@@ -64,100 +64,102 @@ class MLP_OpenMP_GPU : public MLP {
                                 map(to: p_layers[0:num_layers], p_neuron_offsets[0:num_layers], p_weight_offsets[0:num_layers-1]) \
                                 map(to: p_flat_input[0:num_samples * input_size], p_flat_output[0:num_samples * output_size])
         {
-            for (size_t i = 0; i < num_samples; i += b_size)
-            {
-                const size_t current_batch_size = std::min((size_t)b_size, num_samples - i);
-
-                // Zero out gradients
-                #pragma omp target teams distribute parallel for
-                for (size_t j = 0; j < gradients_count; ++j) {
-                    p_accumulated_gradients[j] = 0.0;
-                }
-
-                #pragma omp target teams distribute
-                for (size_t sample_idx = i; sample_idx < i + current_batch_size; ++sample_idx)
+            for (int epoch = 0; epoch < 5; epoch++) {
+                for (size_t i = 0; i < num_samples; i += b_size)
                 {
-                    // FORWARD 
-                    // Copy input for the current sample
-                    #pragma omp parallel for
-                    for (size_t k = 0; k < input_size; ++k) {
-                        p_neurons[k] = p_flat_input[sample_idx * input_size + k];
+                    const size_t current_batch_size = std::min((size_t)b_size, num_samples - i);
+
+                    // Zero out gradients
+                    #pragma omp target teams distribute parallel for
+                    for (size_t j = 0; j < gradients_count; ++j) {
+                        p_accumulated_gradients[j] = 0.0;
                     }
 
-                    for (size_t l = 1; l < num_layers; ++l) {
-                        const int prev_offset = p_neuron_offsets[l - 1];
-                        const int curr_offset = p_neuron_offsets[l];
-                        const int prev_layer_size = p_layers[l - 1];
-                        const int curr_layer_size = p_layers[l];
-                        const int weight_off = p_weight_offsets[l - 1];
-
+                    #pragma omp target teams distribute
+                    for (size_t sample_idx = i; sample_idx < i + current_batch_size; ++sample_idx)
+                    {
+                        // FORWARD 
+                        // Copy input for the current sample
                         #pragma omp parallel for
-                        for (int j = 0; j < curr_layer_size; ++j) {
-                            double sum = p_weights[weight_off + j * (prev_layer_size + 1) + prev_layer_size];
-                            for (int k = 0; k < prev_layer_size; ++k) {
-                                sum += p_weights[weight_off + j * (prev_layer_size + 1) + k] * p_neurons[prev_offset + k];
-                            }
-                            p_neurons[curr_offset + j] = 1.0 / (1.0 + exp(-sum));
+                        for (size_t k = 0; k < input_size; ++k) {
+                            p_neurons[k] = p_flat_input[sample_idx * input_size + k];
                         }
-                    }
 
-                    // BACKWARD
-                    // Calculate deltas for the output layer
-                    const int output_layer_idx = num_layers - 1;
-                    const int output_offset = p_neuron_offsets[output_layer_idx];
-                    
-                    #pragma omp parallel for
-                    for (int j = 0; j < p_layers[output_layer_idx]; ++j) {
-                        double out = p_neurons[output_offset + j];
-                        double target = p_flat_output[sample_idx * output_size + j];
-                        p_deltas[output_offset + j] = (target - out) * out * (1.0 - out);
-                    }
-                    
-                    // Propagate deltas to hidden layers
-                    for (int l = output_layer_idx - 1; l > 0; --l) {
-                        const int curr_offset = p_neuron_offsets[l];
-                        const int next_offset = p_neuron_offsets[l + 1];
-                        const int curr_layer_size = p_layers[l];
-                        const int next_layer_size = p_layers[l + 1];
-                        const int weight_off = p_weight_offsets[l];
+                        for (size_t l = 1; l < num_layers; ++l) {
+                            const int prev_offset = p_neuron_offsets[l - 1];
+                            const int curr_offset = p_neuron_offsets[l];
+                            const int prev_layer_size = p_layers[l - 1];
+                            const int curr_layer_size = p_layers[l];
+                            const int weight_off = p_weight_offsets[l - 1];
 
-                        #pragma omp parallel for
-                        for (int j = 0; j < curr_layer_size; ++j) {
-                            double error = 0.0;
-                            for (int k = 0; k < next_layer_size; ++k) {
-                                error += p_weights[weight_off + k * (curr_layer_size + 1) + j] * p_deltas[next_offset + k];
+                            #pragma omp parallel for
+                            for (int j = 0; j < curr_layer_size; ++j) {
+                                double sum = p_weights[weight_off + j * (prev_layer_size + 1) + prev_layer_size];
+                                for (int k = 0; k < prev_layer_size; ++k) {
+                                    sum += p_weights[weight_off + j * (prev_layer_size + 1) + k] * p_neurons[prev_offset + k];
+                                }
+                                p_neurons[curr_offset + j] = 1.0 / (1.0 + exp(-sum));
                             }
-                            double activated_neuron = p_neurons[curr_offset + j];
-                            p_deltas[curr_offset + j] = error * activated_neuron * (1.0 - activated_neuron);
                         }
-                    }
 
-                    for (size_t l = 0; l < num_layers - 1; ++l) {
-                        const int from_offset = p_neuron_offsets[l];
-                        const int to_offset = p_neuron_offsets[l + 1];
-                        const int from_layer_size = p_layers[l];
-                        const int to_layer_size = p_layers[l + 1];
-                        const int weight_off = p_weight_offsets[l];
-
+                        // BACKWARD
+                        // Calculate deltas for the output layer
+                        const int output_layer_idx = num_layers - 1;
+                        const int output_offset = p_neuron_offsets[output_layer_idx];
+                        
                         #pragma omp parallel for
-                        for (int j = 0; j < to_layer_size; ++j) {
-                            double delta_val = p_deltas[to_offset + j];
-                            for (int k = 0; k < from_layer_size; ++k) {
+                        for (int j = 0; j < p_layers[output_layer_idx]; ++j) {
+                            double out = p_neurons[output_offset + j];
+                            double target = p_flat_output[sample_idx * output_size + j];
+                            p_deltas[output_offset + j] = (target - out) * out * (1.0 - out);
+                        }
+                        
+                        // Propagate deltas to hidden layers
+                        for (int l = output_layer_idx - 1; l > 0; --l) {
+                            const int curr_offset = p_neuron_offsets[l];
+                            const int next_offset = p_neuron_offsets[l + 1];
+                            const int curr_layer_size = p_layers[l];
+                            const int next_layer_size = p_layers[l + 1];
+                            const int weight_off = p_weight_offsets[l];
+
+                            #pragma omp parallel for
+                            for (int j = 0; j < curr_layer_size; ++j) {
+                                double error = 0.0;
+                                for (int k = 0; k < next_layer_size; ++k) {
+                                    error += p_weights[weight_off + k * (curr_layer_size + 1) + j] * p_deltas[next_offset + k];
+                                }
+                                double activated_neuron = p_neurons[curr_offset + j];
+                                p_deltas[curr_offset + j] = error * activated_neuron * (1.0 - activated_neuron);
+                            }
+                        }
+
+                        for (size_t l = 0; l < num_layers - 1; ++l) {
+                            const int from_offset = p_neuron_offsets[l];
+                            const int to_offset = p_neuron_offsets[l + 1];
+                            const int from_layer_size = p_layers[l];
+                            const int to_layer_size = p_layers[l + 1];
+                            const int weight_off = p_weight_offsets[l];
+
+                            #pragma omp parallel for
+                            for (int j = 0; j < to_layer_size; ++j) {
+                                double delta_val = p_deltas[to_offset + j];
+                                for (int k = 0; k < from_layer_size; ++k) {
+                                    #pragma omp atomic
+                                    p_accumulated_gradients[weight_off + j * (from_layer_size + 1) + k] += delta_val * p_neurons[from_offset + k];
+                                }
                                 #pragma omp atomic
-                                p_accumulated_gradients[weight_off + j * (from_layer_size + 1) + k] += delta_val * p_neurons[from_offset + k];
+                                p_accumulated_gradients[weight_off + j * (from_layer_size + 1) + from_layer_size] += delta_val; // Bias gradient
                             }
-                            #pragma omp atomic
-                            p_accumulated_gradients[weight_off + j * (from_layer_size + 1) + from_layer_size] += delta_val; // Bias gradient
                         }
+                    } // End of batch processing
+
+                    #pragma omp target teams distribute parallel for
+                    for (size_t j = 0; j < weights_count; ++j) {
+                        p_weights[j] += lr * (p_accumulated_gradients[j] / current_batch_size);
                     }
-                } // End of batch processing
 
-                #pragma omp target teams distribute parallel for
-                for (size_t j = 0; j < weights_count; ++j) {
-                    p_weights[j] += lr * (p_accumulated_gradients[j] / current_batch_size);
-                }
-
-            } // End of epoch loop
-        } // OMP target data region ends here. Data is automatically mapped back/deallocated.
+                    } // End of epoch loop
+            } // OMP target data region ends here. Data is automatically mapped back/deallocated.
+        }
     }
 };
