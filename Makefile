@@ -1,73 +1,59 @@
-# Compiladores
-CXX = mpic++
-NVCC = nvcc
+# Makefile
 
-# Flags de compilação
-CXXFLAGS = -O3 -Wall -fopenmp -std=c++17 -Iinclude
-NVCCFLAGS = -arch=sm_70 -O3 -Xcompiler -fopenmp -std=c++17 -Iinclude
+# Enable CUDA by default (override with `make CUDA=0`)
+CUDA ?= 1
 
-# Bibliotecas
-LDFLAGS = -fopenmp -lmpi
+# Compilers
+CXX       := mpic++
+NVCC      := nvcc
 
-# Diretórios
-SRC_DIR = src
-OBJ_DIR = build
-INCLUDE_DIR = include
-MODELS_DIR = src/models
-UTIL_DIR = src/util
+# Compile flags
+CXXFLAGS  := -O3 -fopenmp -std=c++17 -Iinclude
+NVCCFLAGS := -arch=sm_70 -O3 -Xcompiler -fopenmp -std=c++17 -Iinclude
 
-# Fontes C++
-SOURCES_CPP := $(wildcard $(SRC_DIR)/*.cpp) \
-			   $(wildcard $(MODELS_DIR)/*.cpp) \
-			   $(wildcard $(UTIL_DIR)/*.cpp)
-
-# CUDA habilitado por padrão
-ifndef CUDA
-CUDA := 1
-endif
-
-# Objetos C++
-OBJECTS_CPP := $(SOURCES_CPP:%.cpp=$(OBJ_DIR)/%.o)
-
+# Linker flags
+LDFLAGS := -fopenmp -lmpi
 ifeq ($(CUDA),1)
-SOURCES_CU := $(wildcard $(MODELS_DIR)/*.cu)
-OBJECTS_CU := $(SOURCES_CU:%.cu=$(OBJ_DIR)/%.o)
-TARGET_OBJS := $(OBJECTS_CPP) $(OBJECTS_CU)
-LDFLAGS += -lcudart
-else
-TARGET_OBJS := $(OBJECTS_CPP)
+  LDFLAGS += -lcudart
 endif
 
-# Executável
-TARGET = run.out
+# Directories
+SRC_DIR := src
+OBJ_DIR := build
 
-.PHONY: all nocuda clean run run-nocuda
+# Find source files
+CPP_SRCS := $(shell find $(SRC_DIR) -type f -name '*.cpp')
+CU_SRCS  := $(shell find $(SRC_DIR)/models -type f -name '*.cu')
 
-all: $(TARGET)
+# Map sources -> objects
+CPP_OBJS := $(CPP_SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
+CU_OBJS  := $(CU_SRCS:$(SRC_DIR)/%.cu=$(OBJ_DIR)/%.o)
+OBJS     := $(CPP_OBJS) $(CU_OBJS)
 
-nocuda:
-	$(MAKE) CUDA=0 all
+# Default target
+all: run
 
-run: all
-	./$(TARGET)
+# Link and run
+run: $(OBJS)
+	@echo "Linking → $@"
+	$(CXX) $^ $(LDFLAGS) -o $@
 
-run-nocuda:
-	$(MAKE) CUDA=0
-	./$(TARGET)
-
-$(TARGET): $(TARGET_OBJS)
-	@echo "Linking $@..."
-	@$(CXX) $^ -o $@ $(LDFLAGS)
-	@echo "Build successful!"
-
-$(OBJ_DIR)/%.o: %.cpp
+# C++ compilation
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(@D)
-	@echo "Compiling $<..."
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
+	@echo " CXX    $< → $@"
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+# CUDA compilation
 ifeq ($(CUDA),1)
-$(OBJ_DIR)/%.o: %.cu
+$(OBJ_DIR)/models/%.o: $(SRC_DIR)/models/%.cu
 	@mkdir -p $(@D)
-	@echo "Compiling CUDA $<..."
-	@$(NVCC) $(NVCCFLAGS) -c $< -o $@
+	@echo " NVCC   $< → $@"
+	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 endif
+
+# Clean up
+clean:
+	rm -rf $(OBJ_DIR) run
+
+.PHONY: all run clean

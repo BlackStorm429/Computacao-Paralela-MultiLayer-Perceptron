@@ -1,278 +1,259 @@
+#include "MLP_CUDA.h"
+
 #include <cuda_runtime.h>
+#include <device_launch_parameters.h>
 #include <iostream>
-#include <cassert>
 #include <vector>
+#include <cmath>
 #include <algorithm>
+#include <stdexcept>
 
-// Device-side activation functions
-__device__ double cuda_sigmoid(double x) {
-    return 1.0 / (1.0 + exp(-x));
-}
-
-__device__ double cuda_sigmoid_derivative(double x) {
-    return x * (1.0 - x);
-}
-
-// Kernel to copy input data to network's input layer
-__global__ void input_kernel(double* neurons, const double* inputs, 
-                            const int* neuron_offsets, int input_size, 
-                            int total_neurons, int batch_size) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= batch_size * input_size) return;
-    
-    int sample = idx / input_size;
-    int feature = idx % input_size;
-    neurons[sample * total_neurons + neuron_offsets[0] + feature] = inputs[sample * input_size + feature];
-}
-
-// Kernel for forward propagation (one layer)
-__global__ void forward_kernel(int layer, double* neurons, const double* weights,
-                              const int* layers, const int* neuron_offsets,
-                              const int* weight_offsets, int total_neurons,
-                              int batch_size) {
-    int neuron_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int sample = blockIdx.y;
-    
-    if (sample >= batch_size) return;
-    if (neuron_idx >= layers[layer]) return;
-    
-    int prev_layer_size = layers[layer-1];
-    int weight_offset = weight_offsets[layer-1];
-    int prev_neuron_offset = neuron_offsets[layer-1];
-    int curr_neuron_offset = neuron_offsets[layer];
-    
-    double sum = weights[weight_offset + neuron_idx * (prev_layer_size + 1) + prev_layer_size]; // bias
-    
-    for (int i = 0; i < prev_layer_size; ++i) {
-        double weight = weights[weight_offset + neuron_idx * (prev_layer_size + 1) + i];
-        double activation = neurons[sample * total_neurons + prev_neuron_offset + i];
-        sum += weight * activation;
-    }
-    
-    neurons[sample * total_neurons + curr_neuron_offset + neuron_idx] = cuda_sigmoid(sum);
-}
-
-// Kernel for output layer deltas
-__global__ void output_delta_kernel(double* deltas, const double* neurons, 
-                                   const double* targets, const int* layers,
-                                   const int* neuron_offsets, int output_size,
-                                   int total_neurons, int batch_size) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= batch_size * output_size) return;
-    
-    int sample = idx / output_size;
-    int neuron = idx % output_size;
-    int output_offset = neuron_offsets[layers[0] - 1]; // Last layer offset
-    
-    double out_val = neurons[sample * total_neurons + output_offset + neuron];
-    double target_val = targets[sample * output_size + neuron];
-    deltas[sample * total_neurons + output_offset + neuron] = (target_val - out_val) * cuda_sigmoid_derivative(out_val);
-}
-
-// Kernel for hidden layer deltas
-__global__ void hidden_delta_kernel(int layer, double* deltas, const double* neurons,
-                                   const double* weights, const int* layers,
-                                   const int* neuron_offsets, const int* weight_offsets,
-                                   int total_neurons, int batch_size) {
-    int neuron_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int sample = blockIdx.y;
-    
-    if (sample >= batch_size) return;
-    if (neuron_idx >= layers[layer]) return;
-    
-    int next_layer_size = layers[layer+1];
-    int weight_offset = weight_offsets[layer];
-    int curr_offset = neuron_offsets[layer];
-    int next_offset = neuron_offsets[layer+1];
-    
-    double error = 0.0;
-    for (int j = 0; j < next_layer_size; ++j) {
-        double weight = weights[weight_offset + j * (layers[layer] + 1) + neuron_idx];
-        error += weight * deltas[sample * total_neurons + next_offset + j];
-    }
-    
-    double neuron_val = neurons[sample * total_neurons + curr_offset + neuron_idx];
-    deltas[sample * total_neurons + curr_offset + neuron_idx] = error * cuda_sigmoid_derivative(neuron_val);
-}
-
-// Kernel to accumulate gradients
-__global__ void accumulate_gradients_kernel(int layer, double* gradients, 
-                                           const double* deltas, const double* neurons,
-                                           const int* layers, const int* neuron_offsets,
-                                           const int* weight_offsets, int total_neurons,
-                                           int batch_size) {
-    int to_neuron = blockIdx.x * blockDim.x + threadIdx.x;
-    int from_neuron = blockIdx.y * blockDim.y + threadIdx.y;
-    int sample = blockIdx.z;
-    
-    if (sample >= batch_size) return;
-    if (to_neuron >= layers[layer+1]) return;
-    if (from_neuron >= layers[layer] + 1) return; // +1 for bias
-
-    int weight_offset = weight_offsets[layer];
-    int from_offset = neuron_offsets[layer];
-    int to_offset = neuron_offsets[layer+1];
-    
-    double delta_val = deltas[sample * total_neurons + to_offset + to_neuron];
-    double activation = (from_neuron < layers[layer]) ? 
-                        neurons[sample * total_neurons + from_offset + from_neuron] : 
-                        1.0; // bias term
-    
-    int weight_index = weight_offset + to_neuron * (layers[layer] + 1) + from_neuron;
-    atomicAdd(&gradients[weight_index], delta_val * activation);
-}
-
-// Kernel to update weights
-__global__ void update_weights_kernel(double* weights, const double* gradients, 
-                                     int total_weights, double lr, int batch_size) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= total_weights) return;
-    weights[idx] += lr * (gradients[idx] / batch_size);
-}
-
-// Constructor - Allocates device memory and copies initial data
-MLP_CUDA::MLP_CUDA(const MLP& base_mlp) : MLP(base_mlp) {
-    // Copy layer configuration
-    total_neurons = neurons.size();
-    total_weights = weights.size();
-    num_layers = layers.size();
-    
-    // Allocate device memory
-    cudaMalloc(&d_weights, total_weights * sizeof(double));
-    cudaMalloc(&d_neurons, batchSize * total_neurons * sizeof(double));
-    cudaMalloc(&d_deltas, batchSize * total_neurons * sizeof(double));
-    cudaMalloc(&d_gradients, total_weights * sizeof(double));
-    
-    // Copy layer metadata
-    cudaMalloc(&d_layers, num_layers * sizeof(int));
-    cudaMalloc(&d_neuron_offsets, num_layers * sizeof(int));
-    cudaMalloc(&d_weight_offsets, (num_layers-1) * sizeof(int));
-    
-    // Copy initial weights
-    cudaMemcpy(d_weights, weights.data(), total_weights * sizeof(double), cudaMemcpyHostToDevice);
-    
-    // Copy metadata
-    cudaMemcpy(d_layers, layers.data(), num_layers * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_neuron_offsets, neuronOffsets.data(), num_layers * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_weight_offsets, weightOffsets.data(), (num_layers-1) * sizeof(int), cudaMemcpyHostToDevice);
-}
-
-// Destructor - Clean up device memory
-MLP_CUDA::~MLP_CUDA() {
-    cudaFree(d_weights);
-    cudaFree(d_neurons);
-    cudaFree(d_deltas);
-    cudaFree(d_gradients);
-    cudaFree(d_layers);
-    cudaFree(d_neuron_offsets);
-    cudaFree(d_weight_offsets);
-}
-
-// Training method with CUDA acceleration
-void MLP_CUDA::train(const std::vector<std::vector<double>>& inputData, 
-                    const std::vector<std::vector<double>>& outputData) {
-    if (inputData.empty() || outputData.empty() || inputData.size() != outputData.size()) {
-        throw std::invalid_argument("Invalid training data");
+#define CUDA_CHECK(err) \
+    if ((err) != cudaSuccess) { \
+        std::cerr << "CUDA error at " << __FILE__ << ":" << __LINE__ \
+                  << " code=" << err << " \"" << cudaGetErrorString(err) << "\"" \
+                  << std::endl; \
+        exit(EXIT_FAILURE); \
     }
 
-    const int num_samples = inputData.size();
-    const int input_size = layers[0];
-    const int output_size = layers.back();
-    
-    // Flatten input and output data
-    std::vector<double> flat_inputs;
-    std::vector<double> flat_targets;
-    for (int i = 0; i < num_samples; ++i) {
-        flat_inputs.insert(flat_inputs.end(), inputData[i].begin(), inputData[i].end());
-        flat_targets.insert(flat_targets.end(), outputData[i].begin(), outputData[i].end());
+// --------------------------------------
+// Kernels (all __global__)
+// --------------------------------------
+
+__global__ void zero_gradients_kernel(double* acc_grad, size_t n) {
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) acc_grad[idx] = 0.0;
+}
+
+__global__ void copy_input_kernel(const double* flat_input,
+                                  double*       neurons,
+                                  int           sample_idx,
+                                  int           input_size) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < input_size) {
+        neurons[tid] = flat_input[sample_idx * input_size + tid];
     }
-    
-    // Device memory for batch data
-    double *d_batch_input, *d_batch_output;
-    cudaMalloc(&d_batch_input, batchSize * input_size * sizeof(double));
-    cudaMalloc(&d_batch_output, batchSize * output_size * sizeof(double));
-    
-    // Training loop
-    for (int i = 0; i < num_samples; i += batchSize) {
-        int current_batch_size = std::min(batchSize, num_samples - i);
-        
-        // Copy batch data to device
-        cudaMemcpy(d_batch_input, flat_inputs.data() + i * input_size, 
-                  current_batch_size * input_size * sizeof(double), 
-                  cudaMemcpyHostToDevice);
-        cudaMemcpy(d_batch_output, flat_targets.data() + i * output_size, 
-                  current_batch_size * output_size * sizeof(double), 
-                  cudaMemcpyHostToDevice);
-        
-        // Reset gradients
-        cudaMemset(d_gradients, 0, total_weights * sizeof(double));
-        
-        // Forward pass: Copy input to network
-        dim3 block_in(256);
-        dim3 grid_in((current_batch_size * input_size + block_in.x - 1) / block_in.x);
-        input_kernel<<<grid_in, block_in>>>(d_neurons, d_batch_input, 
-                                          d_neuron_offsets, input_size,
-                                          total_neurons, current_batch_size);
-        cudaDeviceSynchronize();
-        
-        // Forward pass: Hidden and output layers
-        for (int l = 1; l < num_layers; ++l) {
-            dim3 block_f(256);
-            dim3 grid_f((layers[l] + block_f.x - 1) / block_f.x, current_batch_size);
-            forward_kernel<<<grid_f, block_f>>>(l, d_neurons, d_weights, 
-                                              d_layers, d_neuron_offsets,
-                                              d_weight_offsets, total_neurons,
-                                              current_batch_size);
-            cudaDeviceSynchronize();
+}
+
+__global__ void forward_layer_kernel(const double* weights,
+                                     const int*    layers,
+                                     const int*    neuronOffsets,
+                                     const int*    weightOffsets,
+                                     double*       neurons,
+                                     int           layer)
+{
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int prev_sz = layers[layer - 1];
+    int curr_sz = layers[layer];
+    if (j < curr_sz) {
+        int off_prev = neuronOffsets[layer - 1];
+        int off_curr = neuronOffsets[layer];
+        int woff     = weightOffsets[layer - 1];
+        double sum = weights[woff + j*(prev_sz+1) + prev_sz];  // bias
+        for (int k = 0; k < prev_sz; ++k)
+            sum += weights[woff + j*(prev_sz+1) + k] * neurons[off_prev + k];
+        neurons[off_curr + j] = 1.0 / (1.0 + exp(-sum));
+    }
+}
+
+__global__ void compute_output_deltas_kernel(const double* neurons,
+                                             double*       deltas,
+                                             const double* flat_output,
+                                             int           sample_idx,
+                                             int           output_size,
+                                             const int*    neuronOffsets,
+                                             int           num_layers)
+{
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int L = num_layers - 1;
+    int off = neuronOffsets[L];
+    if (j < output_size) {
+        double out    = neurons[off + j];
+        double target = flat_output[sample_idx * output_size + j];
+        deltas[off + j] = (target - out) * out * (1.0 - out);
+    }
+}
+
+__global__ void propagate_deltas_kernel(const double* weights,
+                                        const int*    layers,
+                                        const int*    neuronOffsets,
+                                        const int*    weightOffsets,
+                                        const double* deltas_in,
+                                        const double* neurons,
+                                        double*       deltas_out,
+                                        int           layer)
+{
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int curr_sz = layers[layer];
+    int next_sz = layers[layer + 1];
+    if (j < curr_sz) {
+        int off_curr = neuronOffsets[layer];
+        int off_next = neuronOffsets[layer + 1];
+        int woff     = weightOffsets[layer];
+        double err = 0.0;
+        for (int k = 0; k < next_sz; ++k)
+            err += weights[woff + k*(curr_sz+1) + j] * deltas_in[off_next + k];
+        double act = neurons[off_curr + j];
+        deltas_out[off_curr + j] = err * act * (1.0 - act);
+    }
+}
+
+__global__ void accumulate_gradients_kernel(const double* deltas,
+                                            const double* neurons,
+                                            double*       acc_grad,
+                                            const int*    layers,
+                                            const int*    neuronOffsets,
+                                            const int*    weightOffsets,
+                                            int           layer)
+{
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int from_sz = layers[layer];
+    int to_sz   = layers[layer + 1];
+    if (j < to_sz) {
+        int off_from = neuronOffsets[layer];
+        int off_to   = neuronOffsets[layer + 1];
+        int woff     = weightOffsets[layer];
+        double dv = deltas[off_to + j];
+        for (int k = 0; k < from_sz; ++k) {
+            atomicAdd(&acc_grad[woff + j*(from_sz+1) + k],
+                      dv * neurons[off_from + k]);
         }
-        
-        // Backward pass: Output layer
-        dim3 block_out(256);
-        dim3 grid_out((current_batch_size * output_size + block_out.x - 1) / block_out.x);
-        output_delta_kernel<<<grid_out, block_out>>>(d_deltas, d_neurons, d_batch_output,
-                                                   d_layers, d_neuron_offsets,
-                                                   output_size, total_neurons,
-                                                   current_batch_size);
-        cudaDeviceSynchronize();
-        
-        // Backward pass: Hidden layers
-        for (int l = num_layers - 2; l > 0; --l) {
-            dim3 block_h(256);
-            dim3 grid_h((layers[l] + block_h.x - 1) / block_h.x, current_batch_size);
-            hidden_delta_kernel<<<grid_h, block_h>>>(l, d_deltas, d_neurons, d_weights,
-                                                   d_layers, d_neuron_offsets,
-                                                   d_weight_offsets, total_neurons,
-                                                   current_batch_size);
-            cudaDeviceSynchronize();
-        }
-        
-        // Accumulate gradients
-        for (int l = 0; l < num_layers - 1; ++l) {
-            dim3 block_acc(16, 16);
-            dim3 grid_acc((layers[l+1] + block_acc.x - 1) / block_acc.x,
-                        (layers[l] + 1 + block_acc.y - 1) / block_acc.y,
-                        current_batch_size);
-            accumulate_gradients_kernel<<<grid_acc, block_acc>>>(l, d_gradients, d_deltas, d_neurons,
-                                                               d_layers, d_neuron_offsets,
-                                                               d_weight_offsets, total_neurons,
-                                                               current_batch_size);
-            cudaDeviceSynchronize();
-        }
-        
-        // Update weights
-        dim3 block_up(256);
-        dim3 grid_up((total_weights + block_up.x - 1) / block_up.x);
-        update_weights_kernel<<<grid_up, block_up>>>(d_weights, d_gradients, 
-                                                    total_weights, learningRate,
-                                                    current_batch_size);
-        cudaDeviceSynchronize();
+        atomicAdd(&acc_grad[woff + j*(from_sz+1) + from_sz], dv);
     }
+}
+
+__global__ void update_weights_kernel(double*       weights,
+                                      const double* acc_grad,
+                                      double        lr,
+                                      int           batch_sz,
+                                      size_t        W)
+{
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < W) {
+        weights[idx] += lr * (acc_grad[idx] / batch_sz);
+    }
+}
+
+// --------------------------------------
+// MLP_CUDA methods
+// --------------------------------------
+
+MLP_CUDA::MLP_CUDA(const int* layerSizes,
+                   int         batch_size,
+                   double      lr,
+                   double      acc_limit)
+  : MLP(layerSizes, batch_size, lr), acc_limit(acc_limit)
+{}
+
+MLP_CUDA::MLP_CUDA(MLP & other) : MLP(other), acc_limit(other.acc_limit)
+{
     
-    // Copy final weights back to host
-    cudaMemcpy(weights.data(), d_weights, total_weights * sizeof(double), 
-              cudaMemcpyDeviceToHost);
-    
-    // Clean up
-    cudaFree(d_batch_input);
-    cudaFree(d_batch_output);
+}
+
+void MLP_CUDA::train(const std::vector<std::vector<double>>& inputData,
+                     const std::vector<std::vector<double>>& outputData)
+{
+    if (inputData.empty() || outputData.empty() ||
+        inputData.size() != outputData.size())
+    {
+        throw std::invalid_argument("Input/output size mismatch");
+    }
+
+    size_t N    = inputData.size();
+    size_t inZ  = layers[0];
+    size_t outZ = layers.back();
+    size_t L    = layers.size();
+    size_t W    = weights.size();
+    size_t T    = neurons.size();
+    size_t D    = deltas.size();
+    size_t G    = accumulated_gradients.size();
+
+    std::vector<double> flat_in (N * inZ),
+                        flat_out(N * outZ);
+    for (size_t i = 0; i < N; ++i) {
+        std::copy(inputData[i].begin(),  inputData[i].end(),  flat_in.begin()  + i*inZ);
+        std::copy(outputData[i].begin(), outputData[i].end(), flat_out.begin() + i*outZ);
+    }
+
+    double *d_W, *d_X, *d_D, *d_G, *d_in, *d_out;
+    int *d_Layers, *d_nOff, *d_wOff;
+
+    CUDA_CHECK(cudaMalloc(&d_W,      W   * sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&d_X,      T   * sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&d_D,      D   * sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&d_G,      G   * sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&d_Layers, L   * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&d_nOff,   L   * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&d_wOff,   (L-1)* sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&d_in,   N*inZ * sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&d_out,  N*outZ * sizeof(double)));
+
+    CUDA_CHECK(cudaMemcpy(d_W,      weights.data(),       W   * sizeof(double), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_Layers, layers.data(),       L   * sizeof(int),    cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_nOff,   neuronOffsets.data(), L   * sizeof(int),    cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_wOff,   weightOffsets.data(), (L-1)* sizeof(int),    cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_in,     flat_in.data(),      N*inZ * sizeof(double), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_out,    flat_out.data(),     N*outZ * sizeof(double), cudaMemcpyHostToDevice));
+
+    const int BLOCK = 256;
+    int grid;
+
+    for (int epoch = 0; epoch < 5; ++epoch) {
+        for (size_t start = 0; start < N; start += batchSize) {
+            int bs = std::min(batchSize, int(N - start));
+
+            // zero
+            grid = (G + BLOCK - 1) / BLOCK;
+            zero_gradients_kernel<<<grid,BLOCK>>>(d_G, G);
+            CUDA_CHECK(cudaDeviceSynchronize());
+
+            for (int s = start; s < start + bs; ++s) {
+                grid = (inZ + BLOCK - 1) / BLOCK;
+                copy_input_kernel<<<grid,BLOCK>>>(d_in, d_X, s, inZ);
+                CUDA_CHECK(cudaDeviceSynchronize());
+
+                for (int l = 1; l < L; ++l) {
+                    grid = (layers[l] + BLOCK - 1) / BLOCK;
+                    forward_layer_kernel<<<grid,BLOCK>>>
+                      (d_W,d_Layers,d_nOff,d_wOff,d_X,l);
+                    CUDA_CHECK(cudaDeviceSynchronize());
+                }
+
+                grid = (outZ + BLOCK - 1) / BLOCK;
+                compute_output_deltas_kernel<<<grid,BLOCK>>>
+                  (d_X,d_D,d_out,s,outZ,d_nOff,(int)L);
+                CUDA_CHECK(cudaDeviceSynchronize());
+
+                for (int l = L-2; l > 0; --l) {
+                    grid = (layers[l] + BLOCK - 1) / BLOCK;
+                    propagate_deltas_kernel<<<grid,BLOCK>>>
+                      (d_W,d_Layers,d_nOff,d_wOff,
+                       d_D, d_X, d_D, l);
+                    CUDA_CHECK(cudaDeviceSynchronize());
+                }
+
+                for (int l = 0; l < L-1; ++l) {
+                    grid = (layers[l+1] + BLOCK - 1) / BLOCK;
+                    accumulate_gradients_kernel<<<grid,BLOCK>>>
+                      (d_D,d_X,d_G,d_Layers,d_nOff,d_wOff,l);
+                    CUDA_CHECK(cudaDeviceSynchronize());
+                }
+            }
+
+            grid = (W + BLOCK - 1) / BLOCK;
+            update_weights_kernel<<<grid,BLOCK>>>
+              (d_W, d_G, learningRate, bs, W);
+            CUDA_CHECK(cudaDeviceSynchronize());
+        }
+    }
+
+    CUDA_CHECK(cudaMemcpy(weights.data(), d_W,
+                          W * sizeof(double),
+                          cudaMemcpyDeviceToHost));
+
+    cudaFree(d_W);     cudaFree(d_X);
+    cudaFree(d_D);     cudaFree(d_G);
+    cudaFree(d_Layers);cudaFree(d_nOff);
+    cudaFree(d_wOff);  cudaFree(d_in);
+    cudaFree(d_out);
 }
