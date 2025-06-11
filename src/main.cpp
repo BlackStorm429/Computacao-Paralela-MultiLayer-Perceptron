@@ -6,7 +6,7 @@
 
 #include "util/MLPTester.cpp"
 #include "util/parser.cpp"
-#include "util/MLP_CUDA.h"
+//#include "util/MLP_CUDA.h"
 #include "models/MLP.cpp"
 #include "models/MLP_OpenMP.cpp"
 #include "models/MLP_MPI.cpp"
@@ -17,7 +17,7 @@ using namespace std;
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
 
-    int rank, size;
+    int rank, size, num_threads = omp_get_thread_num();
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -83,28 +83,30 @@ int main(int argc, char* argv[]) {
         cout << "Tamanho da entrada: " << inputSize  << ", Tamanho da saída: " << outputSize << endl;
 
         const int layers[] = { inputSize, inputSize/4, inputSize/8, outputSize, 0 };
-        const double acc_limit = 0.12;
+        const double diff_loss = 0.10;
         const int max_epochs = 25;
-        MLP mlp_base(layers, 1200, 0.01);
+        MLP mlp_base(layers, 400, 0.1);
 
 
         
+        
+        // Treino OpenMP
+        {
+            cout << "\nTreinamento MLP OpenMP com " << omp_get_max_threads() << " threads\n\n";
+            
+            MLP_OpenMP openMP_net(mlp_base, omp_get_max_threads());
+            MLPTester openMPTester(openMP_net);
+            openmp_duration = openMPTester.train(max_epochs, diff_loss, Xtrain, Ytrain);
+            cout << "Duração OpenMP: " << openmp_duration << " ms\n";
+        }
         // Treinamento OpenMP GPU
         {
             cout << "\nTreinamento MLP OpenMP GPU\n\n";
             
             MLP_OpenMP_GPU gpuNet(mlp_base);
             MLPTester gpuTester(gpuNet);
-            gpu_openmp_duration = gpuTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
-        }
-
-        // Treino OpenMP
-        {
-            cout << "\nTreinamento MLP OpenMP com " << omp_get_max_threads() << " threads\n\n";
-
-            MLP_OpenMP openMP_net(mlp_base, omp_get_max_threads());
-            MLPTester openMPTester(openMP_net);
-            int64_t openmp_duration = openMPTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
+            gpu_openmp_duration = gpuTester.train(max_epochs, diff_loss, Xtrain, Ytrain);
+            cout << "Duração OpenMP GPU: " << gpu_openmp_duration << " ms\n";
         }
         
         // Treino Sequencial
@@ -112,28 +114,21 @@ int main(int argc, char* argv[]) {
             cout << "\nTreinamento MLP Sequencial:\n\n";
     
             MLPTester seqTester(mlp_base);
-            int64_t sequential_duration = seqTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
+            sequential_duration = seqTester.train(max_epochs, diff_loss, Xtrain, Ytrain);
+            cout << "\nDuração sequencial: " << sequential_duration << " ms\n";
         }
 
-        cout << "\nDuração sequencial: " << sequential_duration << " ms\n";
-        cout << "Duração OpenMP: " << openmp_duration << " ms\n";
+        
         cout << "Speedup OpenMP: " << static_cast<double>(sequential_duration) / openmp_duration << "x\n";
-
-        cout << "\nDuração OpenMP: " << openmp_duration << " ms\n"; 
-        cout << "Duração OpenMP GPU: " << gpu_openmp_duration << " ms\n";
         cout << "Speedup GPU/OpenMP: " << static_cast<double>(openmp_duration) / gpu_openmp_duration << "x\n";
-    
-        int batchSize = 100;
-        double lr = 0.01;
-        int numThreads = 4;
 
         // Treinamento MPI
         {
-            cout << "\nTreinamento MLP MPI com " << size << " processos e " << numThreads << " threads por processo:\n\n";
+            cout << "\nTreinamento MLP MPI com " << size << " processos e " << num_threads << " threads por processo:\n\n";
             
-            MLP_MPI mpiNet(layers, batchSize, lr, size, numThreads);
+            MLP_MPI mpiNet(mlp_base, 4, num_threads);
             MLPTester mpiTester(mpiNet);
-            int64_t mpi_duration = mpiTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
+            int64_t mpi_duration = mpiTester.train(max_epochs, diff_loss, Xtrain, Ytrain);
         }
 
         // Print comparativo OpenMP vs MPI
@@ -142,13 +137,13 @@ int main(int argc, char* argv[]) {
         cout << "Speedup (OpenMP/MPI): " << static_cast<double>(openmp_duration) / mpi_duration << "x\n";
 
 	// Treinamento CUDA
-	{
-	    cout << "\nTreinamento MLP CUDA\n\n";
+	    // {
+	    // cout << "\nTreinamento MLP CUDA\n\n";
             
-	    MLP_CUDA cudaNet(mlp_base); // Usar MLP_CUDA
-            MLPTester cudaTester(cudaNet);
-            int64_t cuda_duration = cudaTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
-    	}
+	    // MLP_CUDA cudaNet(mlp_base); // Usar MLP_CUDA
+        //     MLPTester cudaTester(cudaNet);
+        //     int64_t cuda_duration = cudaTester.train(max_epochs, diff_loss, Xtrain, Ytrain);
+    	// }
     }
 
     MPI_Finalize();

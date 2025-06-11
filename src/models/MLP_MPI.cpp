@@ -18,6 +18,8 @@ class MLP_MPI : public IMLP {
         MLP_MPI(const int* layerSizes, int batchSize, double learningRate = 0.1, int mpiSize = 1, int numThreads = 1)
         : learningRate(learningRate), mpiSize(mpiSize), numThreads(numThreads), openMP(layerSizes, batchSize, numThreads, learningRate) {}
 
+        MLP_MPI(MLP mlp, int mpiSize, int numThreads) : openMP(mlp, numThreads), numThreads(numThreads), mpiSize(mpiSize) {}
+
         std::vector<double> forward(const std::vector<double>& input) override 
         {
             return openMP.forward(input);

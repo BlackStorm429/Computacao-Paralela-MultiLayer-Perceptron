@@ -18,9 +18,12 @@ class MLPTester {
         MLPTester(IMLP& mlpInstance)
             : mlp(mlpInstance) {}
     
-        auto train(int epochs, double acc_limit, std::vector<std::vector<double>>& inputs, std::vector<std::vector<double>>& expectedOutputs) 
+        auto train(int epochs, double diff_loss, std::vector<std::vector<double>>& inputs, std::vector<std::vector<double>>& expectedOutputs) 
         {
             int64_t total_duration = 0;
+
+            double inital_loss = loss(inputs, expectedOutputs);
+            std::cout << "Initial loss: " << inital_loss << "; Diff limit: " << diff_loss << "\n";
 
             for (int i = 0; i < epochs; ++i) 
             {
@@ -38,9 +41,9 @@ class MLPTester {
 
                 std::cout << "Epoch: " << i + 1 << " Loss: " << loss_avg  << " Accuracy: " << acc * 100 << "% " << " in " << duration_epoch << " ms" << std::endl;
                 
-                if (acc >= acc_limit) 
+                if (inital_loss - loss_avg >= diff_loss) 
                 {
-                    std::cout << "\nAccuracy limit reached. Stopping training." << std::endl;
+                    std::cout << "\nLimit reached. Stopping training." << std::endl;
                     
                     break;
                 }
