@@ -6,6 +6,7 @@
 
 #include "util/MLPTester.cpp"
 #include "util/parser.cpp"
+#include "util/MLP_CUDA.h"
 #include "models/MLP.cpp"
 #include "models/MLP_OpenMP.cpp"
 #include "models/MLP_MPI.cpp"
@@ -139,6 +140,15 @@ int main(int argc, char* argv[]) {
         cout << "\nDuração OpenMP: " << openmp_duration << " ms\n";
         cout << "Duração MPI: "      << mpi_duration  << " ms\n";
         cout << "Speedup (OpenMP/MPI): " << static_cast<double>(openmp_duration) / mpi_duration << "x\n";
+
+	// Treinamento CUDA
+	{
+	    cout << "\nTreinamento MLP CUDA\n\n";
+            
+	    MLP_CUDA cudaNet(mlp_base); // Usar MLP_CUDA
+            MLPTester cudaTester(cudaNet);
+            int64_t cuda_duration = cudaTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
+    	}
     }
 
     MPI_Finalize();

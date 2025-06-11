@@ -1,35 +1,56 @@
-# Compiler: use the MPI C++ wrapper which links MPI libraries.
-CC = mpic++
-CFLAGS = -Wall -O2 -fopenmp -Iinclude 
+# Compiladores
+CXX = mpicxx
+NVCC = nvcc
 
+# Flags de compilação
+CXXFLAGS = -O3 -Wall -fopenmp -std=c++17 -Iinclude
+NVCCFLAGS = -arch=sm_70 -O3 -Xcompiler -fopenmp -std=c++17 -Iinclude
+
+# Bibliotecas
+LDFLAGS = -fopenmp -lcudart -lmpi
+
+# Diretórios
 SRC_DIR = src
-HDR_DIR = include
+OBJ_DIR = obj
+INCLUDE_DIR = include
+MODELS_DIR = src/models
+UTIL_DIR = src/util
 
-# Compile every .cpp file in the src directory.
-SRCS := $(wildcard $(SRC_DIR)/*.cpp)
+# Fontes
+SOURCES_CPP = $(wildcard $(SRC_DIR)/*.cpp) \
+              $(wildcard $(MODELS_DIR)/*.cpp) \
+              $(wildcard $(UTIL_DIR)/*.cpp)
+              
+SOURCES_CU = $(wildcard $(MODELS_DIR)/*.cu)
 
-# Generate corresponding .o files.
-OBJS := $(SRCS:.cpp=.o)
+# Objetos
+OBJECTS_CPP = $(SOURCES_CPP:%.cpp=$(OBJ_DIR)/%.o)
+OBJECTS_CU = $(SOURCES_CU:%.cu=$(OBJ_DIR)/%.o)
 
-# Dependency files generated alongside object files.
-DEPS := $(OBJS:.o=.d)
+# Executável
+TARGET = mlp_runner
 
-TARGET = main.out
+.PHONY: all clean
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $^ -o $@
+$(TARGET): $(OBJECTS_CPP) $(OBJECTS_CU)
+	@echo "Linking $@..."
+	@$(CXX) $^ -o $@ $(LDFLAGS)
+	@echo "Build successful!"
 
-# Pattern rule to compile .cpp files into .o object files.
-%.o: %.cpp
-	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
+# Regra para arquivos .cpp
+$(OBJ_DIR)/%.o: %.cpp
+	@mkdir -p $(@D)
+	@echo "Compiling $<..."
+	@$(CXX) $(CXXFLAGS) -c $< -o $@
 
-run: $(TARGET)
-	./$(TARGET)
+# Regra para arquivos .cu (CUDA)
+$(OBJ_DIR)/%.o: %.cu
+	@mkdir -p $(@D)
+	@echo "Compiling CUDA $<..."
+	@$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJS) $(TARGET) $(DEPS)
-
-# Include dependency files if they exist.
--include $(DEPS)
+	@rm -rf $(OBJ_DIR) $(TARGET)
+	@echo "Cleaned build artifacts"

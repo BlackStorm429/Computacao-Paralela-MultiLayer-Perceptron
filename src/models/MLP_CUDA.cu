@@ -1,386 +1,279 @@
+#include "MLP_CUDA.h"
+#include <cuda_runtime.h>
 #include <iostream>
+#include <cassert>
 #include <vector>
-#include <random>
-#include <cmath>
-#include <chrono>
+#include <algorithm>
 
-// =========
-// 1) Tipos
-// =========
-using float_t = float;
-
-// Sigmoid e derivada
-__device__ inline float_t sigmoid_cuda(float_t x) {
-    return 1.0f / (1.0f + expf(-x));
-}
-__device__ inline float_t sigmoid_deriv_cuda(float_t y) {
-    // y = sigmoid(x)
-    return y * (1.0f - y);
+// Device-side activation functions
+__device__ double cuda_sigmoid(double x) {
+    return 1.0 / (1.0 + exp(-x));
 }
 
-// Estrutura da rede (buffers na CPU e GPU)
-struct MLPcu {
-    int D, H, C;    // dims
-
-    // Pesos e vieses (host)
-    float_t *h_W1, *h_b1, *h_W2, *h_b2;
-    // Pesos e vieses (device)
-    float_t *d_W1, *d_b1, *d_W2, *d_b2;
-
-    // Gradientes (host)
-    float_t *h_dW1, *h_db1, *h_dW2, *h_db2;
-    // Gradientes (device)
-    float_t *d_dW1, *d_db1, *d_dW2, *d_db2;
-
-    MLPcu(int dim_in, int dim_hid, int dim_out)
-        : D(dim_in), H(dim_hid), C(dim_out)
-    {
-        size_t size_W1 = H * D * sizeof(float_t);
-        size_t size_b1 = H * sizeof(float_t);
-        size_t size_W2 = C * H * sizeof(float_t);
-        size_t size_b2 = C * sizeof(float_t);
-
-        // 1) Aloca e inicializa host
-        h_W1 = (float_t*)malloc(size_W1);
-        h_b1 = (float_t*)malloc(size_b1);
-        h_W2 = (float_t*)malloc(size_W2);
-        h_b2 = (float_t*)malloc(size_b2);
-
-        h_dW1 = (float_t*)malloc(size_W1);
-        h_db1 = (float_t*)malloc(size_b1);
-        h_dW2 = (float_t*)malloc(size_W2);
-        h_db2 = (float_t*)malloc(size_b2);
-
-        std::mt19937 gen(12345);
-        std::normal_distribution<float_t> dist1(0.0f, 1.0f / sqrtf(D));
-        std::normal_distribution<float_t> dist2(0.0f, 1.0f / sqrtf(H));
-
-        for (int i = 0; i < H*D; i++) h_W1[i] = dist1(gen);
-        for (int i = 0; i < H; i++)    h_b1[i] = 0.0f;
-        for (int i = 0; i < C*H; i++) h_W2[i] = dist2(gen);
-        for (int i = 0; i < C; i++)    h_b2[i] = 0.0f;
-
-        // zera gradientes host
-        memset(h_dW1, 0, size_W1);
-        memset(h_db1, 0, size_b1);
-        memset(h_dW2, 0, size_W2);
-        memset(h_db2, 0, size_b2);
-
-        // 2) Aloca device
-        cudaMalloc(&d_W1, size_W1);
-        cudaMalloc(&d_b1, size_b1);
-        cudaMalloc(&d_W2, size_W2);
-        cudaMalloc(&d_b2, size_b2);
-
-        cudaMalloc(&d_dW1, size_W1);
-        cudaMalloc(&d_db1, size_b1);
-        cudaMalloc(&d_dW2, size_W2);
-        cudaMalloc(&d_db2, size_b2);
-
-        // 3) Copia de H→D
-        cudaMemcpy(d_W1, h_W1, size_W1, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_b1, h_b1, size_b1, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_W2, h_W2, size_W2, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_b2, h_b2, size_b2, cudaMemcpyHostToDevice);
-
-        // Gradientes device começam em zero
-        cudaMemset(d_dW1, 0, size_W1);
-        cudaMemset(d_db1, 0, size_b1);
-        cudaMemset(d_dW2, 0, size_W2);
-        cudaMemset(d_db2, 0, size_b2);
-    }
-
-    ~MLPcu() {
-        free(h_W1); free(h_b1); free(h_W2); free(h_b2);
-        free(h_dW1); free(h_db1); free(h_dW2); free(h_db2);
-        cudaFree(d_W1); cudaFree(d_b1); cudaFree(d_W2); cudaFree(d_b2);
-        cudaFree(d_dW1); cudaFree(d_db1); cudaFree(d_dW2); cudaFree(d_db2);
-    }
-
-    // Função auxiliar para sincronizar gradientes (D→H) e zerar no device:
-    void sync_gradients_to_host() {
-        size_t size_W1 = H * D * sizeof(float_t);
-        size_t size_b1 = H * sizeof(float_t);
-        size_t size_W2 = C * H * sizeof(float_t);
-        size_t size_b2 = C * sizeof(float_t);
-
-        cudaMemcpy(h_dW1, d_dW1, size_W1, cudaMemcpyDeviceToHost);
-        cudaMemcpy(h_db1, d_db1, size_b1, cudaMemcpyDeviceToHost);
-        cudaMemcpy(h_dW2, d_dW2, size_W2, cudaMemcpyDeviceToHost);
-        cudaMemcpy(h_db2, d_db2, size_b2, cudaMemcpyDeviceToHost);
-
-        // Zera gradientes no device para próxima iteração
-        cudaMemset(d_dW1, 0, size_W1);
-        cudaMemset(d_db1, 0, size_b1);
-        cudaMemset(d_dW2, 0, size_W2);
-        cudaMemset(d_db2, 0, size_b2);
-    }
-
-    // Função de atualização de parâmetros (host)
-    void update_params_host(float_t lr, int batch_size) {
-        float_t inv_bs = lr / batch_size;
-        for (int i = 0; i < H*D; i++) h_W1[i] -= inv_bs * h_dW1[i];
-        for (int i = 0; i < H;   i++) h_b1[i] -= inv_bs * h_db1[i];
-        for (int i = 0; i < C*H; i++) h_W2[i] -= inv_bs * h_dW2[i];
-        for (int i = 0; i < C;   i++) h_b2[i] -= inv_bs * h_db2[i];
-
-        // Copia os novos pesos para device
-        cudaMemcpy(d_W1, h_W1, H*D*sizeof(float_t), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_b1, h_b1, H*sizeof(float_t), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_W2, h_W2, C*H*sizeof(float_t), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_b2, h_b2, C*sizeof(float_t), cudaMemcpyHostToDevice);
-    }
-};
-
-// ====================
-// 2) Dataset Simples
-// ====================
-struct DataSet {
-    int N, D, C;
-    float_t *d_X; // [N][D] (device)
-    int     *d_Y; // [N]     (device)
-    DataSet(int n, int d, int c) : N(n), D(d), C(c) {
-        size_t sx = N * D * sizeof(float_t);
-        size_t sy = N * sizeof(int);
-        // aloca host temporário para geração sintética
-        std::vector<float_t> h_X(N*D);
-        std::vector<int>     h_Y(N);
-        std::mt19937 gen(0);
-        std::uniform_real_distribution<float_t> dist(0.0f, 1.0f);
-        for (int i = 0; i < N*D; i++) h_X[i] = dist(gen);
-        for (int i = 0; i < N; i++)   h_Y[i] = gen() % C;
-
-        // aloca device
-        cudaMalloc(&d_X, sx);
-        cudaMalloc(&d_Y, sy);
-        // copia host → device
-        cudaMemcpy(d_X, h_X.data(), sx, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_Y, h_Y.data(), sy, cudaMemcpyHostToDevice);
-    }
-    ~DataSet() {
-        cudaFree(d_X);
-        cudaFree(d_Y);
-    }
-};
-
-// =======================================================
-// 3) Kernels CUDA: forward, backward e acúmulo de gradientes
-// =======================================================
-
-// 3.1) Forward kernel: calcula hidden_out e output_out
-//      - X_batch: [B][D]
-//      - W1: [H][D], b1: [H]
-//      - hidden_out: [B][H]
-//      - W2: [C][H], b2: [C]
-//      - output_out: [B][C]
-__global__ void kernel_forward(const float_t *X_batch, int B,
-                               const float_t *W1, const float_t *b1,
-                               float_t *hidden_out,
-                               const float_t *W2, const float_t *b2,
-                               float_t *output_out,
-                               int D, int H, int C)
-{
-    int i = blockIdx.x;    // índice de amostra no batch
-    int t = threadIdx.x;   // usaremos threads para neurônios
-
-    // 1) calcular hidden_out (cada thread calcula um neurônio j ∈ [0,H))
-    if (i < B) {
-        // bloco de threads de tamanho >= H (ou dividido em sub-laços)
-        if (t < H) {
-            float_t sum = 0.0f;
-            for (int k = 0; k < D; k++) {
-                sum += W1[t * D + k] * X_batch[i * D + k];
-            }
-            sum += b1[t];
-            hidden_out[i * H + t] = sigmoid_cuda(sum);
-        }
-    }
-    __syncthreads();
-
-    // 2) calcular output_out (cada thread calcula um neurônio j ∈ [0,C))
-    //    Reorganizamos: usamos o mesmo bloco, mas threads extras calculam saídas.
-    //    Para simplicidade, assumimos numThreads >= max(H,C).
-    if (i < B) {
-        if (t < C) {
-            float_t sum = 0.0f;
-            for (int k = 0; k < H; k++) {
-                sum += W2[t * H + k] * hidden_out[i * H + k];
-            }
-            sum += b2[t];
-            output_out[i * C + t] = sigmoid_cuda(sum);
-        }
-    }
+__device__ double cuda_sigmoid_derivative(double x) {
+    return x * (1.0 - x);
 }
 
-// 3.2) Backward kernel: 
-//      - Produz: δ_out [B][C], δ_hidden [B][H]
-//      - E acumula no device: dW2, db2, dW1, db1
-__global__ void kernel_backward(const float_t *X_batch, const int *Y_batch,
-                                const float_t *hidden_out, const float_t *output_out,
-                                int B, 
-                                const float_t *W2, 
-                                float_t *dW1, float_t *db1, 
-                                float_t *dW2, float_t *db2,
-                                int D, int H, int C)
-{
-    // Vamos partir em etapas:
-    //  a) calcular δ_out[i][j], para i< B, j< C
-    //  b) acumular gradientes de W2, b2
-    //  c) calcular δ_hidden[i][k], acumular gradientes W1, b1
-
-    int i = blockIdx.x;   // índice da amostra
-    int t = threadIdx.x;  // thread = neurônio
-
-    extern __shared__ float_t sdata[]; 
-    // Usaremos sdata para armazenar δ_out[i][*] ou δ_hidden[i][*] temporariamente.
-
-    // (a) δ_out
-    if (i < B && t < C) {
-        float_t y_true = (t == Y_batch[i]) ? 1.0f : 0.0f;
-        float_t o = output_out[i * C + t];
-        sdata[t] = (o - y_true) * sigmoid_deriv_cuda(o);
-    }
-    __syncthreads();
-
-    // (b) acumular dW2 e db2: 
-    // Cada thread que quiser pode acumular para cada W2[t][k]:
-    // dW2[t][k] += δ_out[i][t] * hidden_out[i][k], para todos k < H
-    if (i < B && t < C) {
-        float_t delta_o = sdata[t];
-        // db2
-        atomicAdd(&db2[t], delta_o);
-        // dW2[t][*]
-        for (int k = 0; k < H; k++) {
-            float_t val = delta_o * hidden_out[i * H + k];
-            atomicAdd(&dW2[t * H + k], val);
-        }
-    }
-    __syncthreads();
-
-    // (c) δ_hidden[i][k] = ( Σ_j W2[j][k] * δ_out[i][j] ) * sigmoid’(hidden_out[i][k])
-    if (i < B && t < H) {
-        float_t sum = 0.0f;
-        for (int j = 0; j < C; j++) {
-            sum += W2[j * H + t] * sdata[j];
-        }
-        float_t h = hidden_out[i * H + t];
-        float_t delta_h = sum * sigmoid_deriv_cuda(h);
-        // armazena em sdata (reaproveitando)
-        sdata[t] = delta_h;
-    }
-    __syncthreads();
-
-    // acumular dW1 e db1
-    if (i < B && t < H) {
-        float_t delta_h = sdata[t];
-        // db1
-        atomicAdd(&db1[t], delta_h);
-        // dW1[t][*]
-        for (int k = 0; k < D; k++) {
-            float_t val = delta_h * X_batch[i * D + k];
-            atomicAdd(&dW1[t * D + k], val);
-        }
-    }
+// Kernel to copy input data to network's input layer
+__global__ void input_kernel(double* neurons, const double* inputs, 
+                            const int* neuron_offsets, int input_size, 
+                            int total_neurons, int batch_size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= batch_size * input_size) return;
+    
+    int sample = idx / input_size;
+    int feature = idx % input_size;
+    neurons[sample * total_neurons + neuron_offsets[0] + feature] = inputs[sample * input_size + feature];
 }
 
-// ========================
-// 4) Loop de Treino CUDA
-// ========================
+// Kernel for forward propagation (one layer)
+__global__ void forward_kernel(int layer, double* neurons, const double* weights,
+                              const int* layers, const int* neuron_offsets,
+                              const int* weight_offsets, int total_neurons,
+                              int batch_size) {
+    int neuron_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int sample = blockIdx.y;
+    
+    if (sample >= batch_size) return;
+    if (neuron_idx >= layers[layer]) return;
+    
+    int prev_layer_size = layers[layer-1];
+    int weight_offset = weight_offsets[layer-1];
+    int prev_neuron_offset = neuron_offsets[layer-1];
+    int curr_neuron_offset = neuron_offsets[layer];
+    
+    double sum = weights[weight_offset + neuron_idx * (prev_layer_size + 1) + prev_layer_size]; // bias
+    
+    for (int i = 0; i < prev_layer_size; ++i) {
+        double weight = weights[weight_offset + neuron_idx * (prev_layer_size + 1) + i];
+        double activation = neurons[sample * total_neurons + prev_neuron_offset + i];
+        sum += weight * activation;
+    }
+    
+    neurons[sample * total_neurons + curr_neuron_offset + neuron_idx] = cuda_sigmoid(sum);
+}
 
-void train_cuda(MLPcu &net, DataSet &ds,
-                int epochs, int batch_size, float_t lr)
-{
-    int N = ds.N;
-    int D = ds.D;
-    int C = ds.C;
-    int H = net.H;
-    int num_batches = (N + batch_size - 1) / batch_size;
+// Kernel for output layer deltas
+__global__ void output_delta_kernel(double* deltas, const double* neurons, 
+                                   const double* targets, const int* layers,
+                                   const int* neuron_offsets, int output_size,
+                                   int total_neurons, int batch_size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= batch_size * output_size) return;
+    
+    int sample = idx / output_size;
+    int neuron = idx % output_size;
+    int output_offset = neuron_offsets[layers[0] - 1]; // Last layer offset
+    
+    double out_val = neurons[sample * total_neurons + output_offset + neuron];
+    double target_val = targets[sample * output_size + neuron];
+    deltas[sample * total_neurons + output_offset + neuron] = (target_val - out_val) * cuda_sigmoid_derivative(out_val);
+}
 
-    // Buffers intermediários (device):
-    float_t *d_hidden, *d_output;
-    // Máximo espaço: batch_size × maior(H, C)
-    size_t size_hidden = batch_size * H * sizeof(float_t);
-    size_t size_output = batch_size * C * sizeof(float_t);
-    cudaMalloc(&d_hidden, size_hidden);
-    cudaMalloc(&d_output, size_output);
+// Kernel for hidden layer deltas
+__global__ void hidden_delta_kernel(int layer, double* deltas, const double* neurons,
+                                   const double* weights, const int* layers,
+                                   const int* neuron_offsets, const int* weight_offsets,
+                                   int total_neurons, int batch_size) {
+    int neuron_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int sample = blockIdx.y;
+    
+    if (sample >= batch_size) return;
+    if (neuron_idx >= layers[layer]) return;
+    
+    int next_layer_size = layers[layer+1];
+    int weight_offset = weight_offsets[layer];
+    int curr_offset = neuron_offsets[layer];
+    int next_offset = neuron_offsets[layer+1];
+    
+    double error = 0.0;
+    for (int j = 0; j < next_layer_size; ++j) {
+        double weight = weights[weight_offset + j * (layers[layer] + 1) + neuron_idx];
+        error += weight * deltas[sample * total_neurons + next_offset + j];
+    }
+    
+    double neuron_val = neurons[sample * total_neurons + curr_offset + neuron_idx];
+    deltas[sample * total_neurons + curr_offset + neuron_idx] = error * cuda_sigmoid_derivative(neuron_val);
+}
 
-    for (int epoch = 0; epoch < epochs; epoch++) {
-        auto t0 = std::chrono::high_resolution_clock::now();
+// Kernel to accumulate gradients
+__global__ void accumulate_gradients_kernel(int layer, double* gradients, 
+                                           const double* deltas, const double* neurons,
+                                           const int* layers, const int* neuron_offsets,
+                                           const int* weight_offsets, int total_neurons,
+                                           int batch_size) {
+    int to_neuron = blockIdx.x * blockDim.x + threadIdx.x;
+    int from_neuron = blockIdx.y * blockDim.y + threadIdx.y;
+    int sample = blockIdx.z;
+    
+    if (sample >= batch_size) return;
+    if (to_neuron >= layers[layer+1]) return;
+    if (from_neuron >= layers[layer] + 1) return; // +1 for bias
 
-        // Zera gradientes device
-        cudaMemset(net.d_dW1, 0, H*D*sizeof(float_t));
-        cudaMemset(net.d_db1, 0, H*sizeof(float_t));
-        cudaMemset(net.d_dW2, 0, C*H*sizeof(float_t));
-        cudaMemset(net.d_db2, 0, C*sizeof(float_t));
+    int weight_offset = weight_offsets[layer];
+    int from_offset = neuron_offsets[layer];
+    int to_offset = neuron_offsets[layer+1];
+    
+    double delta_val = deltas[sample * total_neurons + to_offset + to_neuron];
+    double activation = (from_neuron < layers[layer]) ? 
+                        neurons[sample * total_neurons + from_offset + from_neuron] : 
+                        1.0; // bias term
+    
+    int weight_index = weight_offset + to_neuron * (layers[layer] + 1) + from_neuron;
+    atomicAdd(&gradients[weight_index], delta_val * activation);
+}
 
-        for (int b = 0; b < num_batches; b++) {
-            int start = b * batch_size;
-            int end   = std::min(start + batch_size, N);
-            int B     = end - start;
+// Kernel to update weights
+__global__ void update_weights_kernel(double* weights, const double* gradients, 
+                                     int total_weights, double lr, int batch_size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= total_weights) return;
+    weights[idx] += lr * (gradients[idx] / batch_size);
+}
 
-            // PONHA INDICES para o batch no device:
-            float_t *X_batch = ds.d_X + start * D;
-            int     *Y_batch = ds.d_Y + start;
+// Constructor - Allocates device memory and copies initial data
+MLP_CUDA::MLP_CUDA(const MLP& base_mlp) : MLP(base_mlp) {
+    // Copy layer configuration
+    total_neurons = neurons.size();
+    total_weights = weights.size();
+    num_layers = layers.size();
+    
+    // Allocate device memory
+    cudaMalloc(&d_weights, total_weights * sizeof(double));
+    cudaMalloc(&d_neurons, batchSize * total_neurons * sizeof(double));
+    cudaMalloc(&d_deltas, batchSize * total_neurons * sizeof(double));
+    cudaMalloc(&d_gradients, total_weights * sizeof(double));
+    
+    // Copy layer metadata
+    cudaMalloc(&d_layers, num_layers * sizeof(int));
+    cudaMalloc(&d_neuron_offsets, num_layers * sizeof(int));
+    cudaMalloc(&d_weight_offsets, (num_layers-1) * sizeof(int));
+    
+    // Copy initial weights
+    cudaMemcpy(d_weights, weights.data(), total_weights * sizeof(double), cudaMemcpyHostToDevice);
+    
+    // Copy metadata
+    cudaMemcpy(d_layers, layers.data(), num_layers * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_neuron_offsets, neuronOffsets.data(), num_layers * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_weight_offsets, weightOffsets.data(), (num_layers-1) * sizeof(int), cudaMemcpyHostToDevice);
+}
 
-            // 1) Forward
-            // Cada bloco = 1 amostra; cada bloco com numThreads ≥ max(H,C)
-            int threads = std::max(H, C);
-            int blocks  = B;
-            // tamanho de shared mem = max(H,C) floats
-            int shmem   = threads * sizeof(float_t);
-            kernel_forward<<<blocks, threads, 0>>>(
-                X_batch, B,
-                net.d_W1, net.d_b1, d_hidden,
-                net.d_W2, net.d_b2, d_output,
-                D, H, C);
-            cudaDeviceSynchronize();
+// Destructor - Clean up device memory
+MLP_CUDA::~MLP_CUDA() {
+    cudaFree(d_weights);
+    cudaFree(d_neurons);
+    cudaFree(d_deltas);
+    cudaFree(d_gradients);
+    cudaFree(d_layers);
+    cudaFree(d_neuron_offsets);
+    cudaFree(d_weight_offsets);
+}
 
-            // 2) Backward
-            kernel_backward<<<blocks, threads, sizeof(float_t) * max(H,C)>>>(
-                X_batch, Y_batch,
-                d_hidden, d_output,
-                B,
-                net.d_W2,
-                net.d_dW1, net.d_db1,
-                net.d_dW2, net.d_db2,
-                D, H, C);
+// Training method with CUDA acceleration
+void MLP_CUDA::train(const std::vector<std::vector<double>>& inputData, 
+                    const std::vector<std::vector<double>>& outputData) {
+    if (inputData.empty() || outputData.empty() || inputData.size() != outputData.size()) {
+        throw std::invalid_argument("Invalid training data");
+    }
+
+    const int num_samples = inputData.size();
+    const int input_size = layers[0];
+    const int output_size = layers.back();
+    
+    // Flatten input and output data
+    std::vector<double> flat_inputs;
+    std::vector<double> flat_targets;
+    for (int i = 0; i < num_samples; ++i) {
+        flat_inputs.insert(flat_inputs.end(), inputData[i].begin(), inputData[i].end());
+        flat_targets.insert(flat_targets.end(), outputData[i].begin(), outputData[i].end());
+    }
+    
+    // Device memory for batch data
+    double *d_batch_input, *d_batch_output;
+    cudaMalloc(&d_batch_input, batchSize * input_size * sizeof(double));
+    cudaMalloc(&d_batch_output, batchSize * output_size * sizeof(double));
+    
+    // Training loop
+    for (int i = 0; i < num_samples; i += batchSize) {
+        int current_batch_size = std::min(batchSize, num_samples - i);
+        
+        // Copy batch data to device
+        cudaMemcpy(d_batch_input, flat_inputs.data() + i * input_size, 
+                  current_batch_size * input_size * sizeof(double), 
+                  cudaMemcpyHostToDevice);
+        cudaMemcpy(d_batch_output, flat_targets.data() + i * output_size, 
+                  current_batch_size * output_size * sizeof(double), 
+                  cudaMemcpyHostToDevice);
+        
+        // Reset gradients
+        cudaMemset(d_gradients, 0, total_weights * sizeof(double));
+        
+        // Forward pass: Copy input to network
+        dim3 block_in(256);
+        dim3 grid_in((current_batch_size * input_size + block_in.x - 1) / block_in.x);
+        input_kernel<<<grid_in, block_in>>>(d_neurons, d_batch_input, 
+                                          d_neuron_offsets, input_size,
+                                          total_neurons, current_batch_size);
+        cudaDeviceSynchronize();
+        
+        // Forward pass: Hidden and output layers
+        for (int l = 1; l < num_layers; ++l) {
+            dim3 block_f(256);
+            dim3 grid_f((layers[l] + block_f.x - 1) / block_f.x, current_batch_size);
+            forward_kernel<<<grid_f, block_f>>>(l, d_neurons, d_weights, 
+                                              d_layers, d_neuron_offsets,
+                                              d_weight_offsets, total_neurons,
+                                              current_batch_size);
             cudaDeviceSynchronize();
         }
-
-        // 3) Copia gradientes p/ host e atualiza pesos
-        net.sync_gradients_to_host();
-        net.update_params_host(lr, N);
-
-        auto t1 = std::chrono::high_resolution_clock::now();
-        double elapsed = std::chrono::duration<double>(t1 - t0).count();
-        std::cout << "[CUDA] Epoch " << epoch
-                  << " concluído em " << elapsed << " s\n";
+        
+        // Backward pass: Output layer
+        dim3 block_out(256);
+        dim3 grid_out((current_batch_size * output_size + block_out.x - 1) / block_out.x);
+        output_delta_kernel<<<grid_out, block_out>>>(d_deltas, d_neurons, d_batch_output,
+                                                   d_layers, d_neuron_offsets,
+                                                   output_size, total_neurons,
+                                                   current_batch_size);
+        cudaDeviceSynchronize();
+        
+        // Backward pass: Hidden layers
+        for (int l = num_layers - 2; l > 0; --l) {
+            dim3 block_h(256);
+            dim3 grid_h((layers[l] + block_h.x - 1) / block_h.x, current_batch_size);
+            hidden_delta_kernel<<<grid_h, block_h>>>(l, d_deltas, d_neurons, d_weights,
+                                                   d_layers, d_neuron_offsets,
+                                                   d_weight_offsets, total_neurons,
+                                                   current_batch_size);
+            cudaDeviceSynchronize();
+        }
+        
+        // Accumulate gradients
+        for (int l = 0; l < num_layers - 1; ++l) {
+            dim3 block_acc(16, 16);
+            dim3 grid_acc((layers[l+1] + block_acc.x - 1) / block_acc.x,
+                        (layers[l] + 1 + block_acc.y - 1) / block_acc.y,
+                        current_batch_size);
+            accumulate_gradients_kernel<<<grid_acc, block_acc>>>(l, d_gradients, d_deltas, d_neurons,
+                                                               d_layers, d_neuron_offsets,
+                                                               d_weight_offsets, total_neurons,
+                                                               current_batch_size);
+            cudaDeviceSynchronize();
+        }
+        
+        // Update weights
+        dim3 block_up(256);
+        dim3 grid_up((total_weights + block_up.x - 1) / block_up.x);
+        update_weights_kernel<<<grid_up, block_up>>>(d_weights, d_gradients, 
+                                                    total_weights, learningRate,
+                                                    current_batch_size);
+        cudaDeviceSynchronize();
     }
-
-    cudaFree(d_hidden);
-    cudaFree(d_output);
-}
-
-// ========
-// 5) Main
-// ========
-int main(int argc, char *argv[]) {
-    int N       = 10000;    // número total de amostras
-    int D       = 128;
-    int H       = 256;
-    int C       = 10;
-    int epochs  = 20;
-    int batch   = 128;
-    float_t lr  = 0.01f;
-
-    // 1) Gera dataset sintético no device
-    DataSet ds(N, D, C);
-
-    // 2) Cria rede
-    MLPcu net(D, H, C);
-
-    // 3) Treina
-    train_cuda(net, ds, epochs, batch, lr);
-
-    return 0;
+    
+    // Copy final weights back to host
+    cudaMemcpy(weights.data(), d_weights, total_weights * sizeof(double), 
+              cudaMemcpyDeviceToHost);
+    
+    // Clean up
+    cudaFree(d_batch_input);
+    cudaFree(d_batch_output);
 }
