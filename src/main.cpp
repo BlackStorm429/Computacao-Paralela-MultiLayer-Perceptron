@@ -6,7 +6,7 @@
 
 #include "util/MLPTester.cpp"
 #include "util/parser.cpp"
-//#include "util/MLP_CUDA.h"
+#include "models/MLP_CUDA.cu"
 #include "models/MLP.cpp"
 #include "models/MLP_OpenMP.cpp"
 #include "models/MLP_MPI.cpp"

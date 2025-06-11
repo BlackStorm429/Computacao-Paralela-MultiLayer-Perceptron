@@ -1,4 +1,3 @@
-#include "MLP_CUDA.h"
 #include <cuda_runtime.h>
 #include <iostream>
 #include <cassert>
