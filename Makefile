@@ -1,5 +1,5 @@
 # Compiladores
-CXX = mpicxx
+CXX = mpic++
 NVCC = nvcc
 
 # Flags de compilação

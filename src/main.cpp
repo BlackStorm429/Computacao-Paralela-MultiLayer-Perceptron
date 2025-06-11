@@ -17,7 +17,7 @@ using namespace std;
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
 
-    int rank, size, num_threads = omp_get_thread_num();
+    int rank, size, num_threads = omp_get_max_threads();
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -79,16 +79,26 @@ int main(int argc, char* argv[]) {
     {
         int inputSize = inputs[0].size();
         int outputSize = expectedOutputs[0].size();
-
-        cout << "Tamanho da entrada: " << inputSize  << ", Tamanho da saída: " << outputSize << endl;
-
-        const int layers[] = { inputSize, inputSize/4, inputSize/8, outputSize, 0 };
-        const double diff_loss = 0.10;
-        const int max_epochs = 25;
-        MLP mlp_base(layers, 400, 0.1);
-
-
         
+        cout << "Tamanho da entrada: " << inputSize  << ", Tamanho da saída: " << outputSize << endl;
+        
+        const int layers[] = { inputSize, inputSize/4, inputSize/8, outputSize, 0 };
+        const double diff_loss = 0.1;
+        const int max_epochs = 25;
+        const int batch_size = 100;
+        const double learning_rate = 0.01;
+        MLP mlp_base(layers, batch_size, learning_rate);
+        
+        
+        
+        // Treinamento MPI
+        {
+            
+            cout << "\nTreinamento MLP MPI com " << size << " processos e " << num_threads << " threads por processo:\n\n";
+            MLP_MPI mpiNet(mlp_base, size, num_threads);
+            MLPTester mpiTester(mpiNet);
+            int64_t mpi_duration = mpiTester.train(max_epochs, diff_loss, Xtrain, Ytrain);
+        }
         
         // Treino OpenMP
         {
@@ -122,15 +132,7 @@ int main(int argc, char* argv[]) {
         cout << "Speedup OpenMP: " << static_cast<double>(sequential_duration) / openmp_duration << "x\n";
         cout << "Speedup GPU/OpenMP: " << static_cast<double>(openmp_duration) / gpu_openmp_duration << "x\n";
 
-        // Treinamento MPI
-        {
-            cout << "\nTreinamento MLP MPI com " << size << " processos e " << num_threads << " threads por processo:\n\n";
-            
-            MLP_MPI mpiNet(mlp_base, 4, num_threads);
-            MLPTester mpiTester(mpiNet);
-            int64_t mpi_duration = mpiTester.train(max_epochs, diff_loss, Xtrain, Ytrain);
-        }
-
+        
         // Print comparativo OpenMP vs MPI
         cout << "\nDuração OpenMP: " << openmp_duration << " ms\n";
         cout << "Duração MPI: "      << mpi_duration  << " ms\n";
@@ -147,6 +149,6 @@ int main(int argc, char* argv[]) {
     }
 
     MPI_Finalize();
-
+    
     return 0;
 }
