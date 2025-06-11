@@ -14,7 +14,7 @@ NVCCFLAGS := -arch=sm_70 -O3 -Xcompiler -fopenmp -std=c++17 -Iinclude
 # Linker flags
 LDFLAGS := -fopenmp -lmpi
 ifeq ($(CUDA),1)
-  LDFLAGS += -lcudart
+	LDFLAGS += -lcudart
 endif
 
 # Directories
@@ -31,11 +31,11 @@ CU_OBJS  := $(CU_SRCS:$(SRC_DIR)/%.cu=$(OBJ_DIR)/%.o)
 OBJS     := $(CPP_OBJS) $(CU_OBJS)
 
 # Default target
-all: run
+all: run.out
 
 # Link and run
-run: $(OBJS)
-	@echo "Linking → $@"
+run.out: $(OBJS)
+	@echo "Linking → run.out"
 	$(CXX) $^ $(LDFLAGS) -o $@
 
 # C++ compilation
@@ -54,6 +54,6 @@ endif
 
 # Clean up
 clean:
-	rm -rf $(OBJ_DIR) run
+	rm -rf $(OBJ_DIR) run.out
 
-.PHONY: all run clean
+.PHONY: all run.out clean

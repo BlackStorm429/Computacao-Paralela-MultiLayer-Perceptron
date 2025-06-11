@@ -5,7 +5,7 @@
 
 class MLP_CUDA : public MLP {
 public:
-    MLP_CUDA(const MLP& mlp_base);
+    MLP_CUDA(const MLP& mlp_base, const int acc_limit);
 
     MLP_CUDA(const int* layerSizes,
              int batch_size,

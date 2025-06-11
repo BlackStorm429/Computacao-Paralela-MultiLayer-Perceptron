@@ -145,10 +145,7 @@ MLP_CUDA::MLP_CUDA(const int* layerSizes,
   : MLP(layerSizes, batch_size, lr), acc_limit(acc_limit)
 {}
 
-MLP_CUDA::MLP_CUDA(MLP & other) : MLP(other), acc_limit(other.acc_limit)
-{
-    
-}
+MLP_CUDA::MLP_CUDA(const MLP& mlp_base, const int acc_limit) : MLP(mlp_base), acc_limit(acc_limit) {}
 
 void MLP_CUDA::train(const std::vector<std::vector<double>>& inputData,
                      const std::vector<std::vector<double>>& outputData)

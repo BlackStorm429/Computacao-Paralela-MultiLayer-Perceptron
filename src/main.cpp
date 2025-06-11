@@ -83,20 +83,20 @@ int main(int argc, char* argv[]) {
         cout << "Tamanho da entrada: " << inputSize  << ", Tamanho da saída: " << outputSize << endl;
         
         const int layers[] = { inputSize, inputSize/4, inputSize/8, outputSize, 0 };
-        const double diff_loss = 0.1;
-        const int max_epochs = 25;
-        const int batch_size = 100;
-        const double learning_rate = 0.01;
+        const int max_epochs = 50;
+        const int batch_size = 400;
+        const double learning_rate = 0.05;
+        const double acc_limit = 0.12;
         MLP mlp_base(layers, batch_size, learning_rate);
         
         
-        {
-        cout << "\nTreinamento MLP CUDA\n\n";
+        // {
+        // cout << "\nTreinamento MLP CUDA\n\n";
             
-        MLP_CUDA cudaNet(mlp_base); // Usar MLP_CUDA
-        MLPTester cudaTester(cudaNet);
-        int64_t cuda_duration = cudaTester.train(max_epochs, diff_loss, Xtrain, Ytrain);
-        }
+        // MLP_CUDA cudaNet(mlp_base, 0.1); // Usar MLP_CUDA
+        // MLPTester cudaTester(cudaNet);
+        // int64_t cuda_duration = cudaTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
+        // }
         
         // Treinamento MPI
         {
@@ -104,7 +104,7 @@ int main(int argc, char* argv[]) {
             cout << "\nTreinamento MLP MPI com " << size << " processos e " << num_threads << " threads por processo:\n\n";
             MLP_MPI mpiNet(mlp_base, size, num_threads);
             MLPTester mpiTester(mpiNet);
-            int64_t mpi_duration = mpiTester.train(max_epochs, diff_loss, Xtrain, Ytrain);
+            int64_t mpi_duration = mpiTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
         }
         
         // Treino OpenMP
@@ -113,7 +113,7 @@ int main(int argc, char* argv[]) {
             
             MLP_OpenMP openMP_net(mlp_base, omp_get_max_threads());
             MLPTester openMPTester(openMP_net);
-            openmp_duration = openMPTester.train(max_epochs, diff_loss, Xtrain, Ytrain);
+            openmp_duration = openMPTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
             cout << "Duração OpenMP: " << openmp_duration << " ms\n";
         }
         // Treinamento OpenMP GPU
@@ -122,7 +122,7 @@ int main(int argc, char* argv[]) {
             
             MLP_OpenMP_GPU gpuNet(mlp_base);
             MLPTester gpuTester(gpuNet);
-            gpu_openmp_duration = gpuTester.train(max_epochs, diff_loss, Xtrain, Ytrain);
+            gpu_openmp_duration = gpuTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
             cout << "Duração OpenMP GPU: " << gpu_openmp_duration << " ms\n";
         }
         
@@ -131,7 +131,7 @@ int main(int argc, char* argv[]) {
             cout << "\nTreinamento MLP Sequencial:\n\n";
     
             MLPTester seqTester(mlp_base);
-            sequential_duration = seqTester.train(max_epochs, diff_loss, Xtrain, Ytrain);
+            sequential_duration = seqTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
             cout << "\nDuração sequencial: " << sequential_duration << " ms\n";
         }
 
