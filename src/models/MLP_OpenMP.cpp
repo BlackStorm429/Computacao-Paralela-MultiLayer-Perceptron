@@ -57,7 +57,7 @@ class MLP_OpenMP : public MLP {
 
                     local_mlp.zero_gradients();
                     
-                    #pragma omp for schedule(static)
+                    #pragma omp for schedule(dynamic)
                     for (int i = 0; i < current_batch_size; ++i) 
                     { 
                         local_mlp.forward(inputData[k + i]);
