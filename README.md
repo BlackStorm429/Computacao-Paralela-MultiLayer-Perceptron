@@ -40,29 +40,11 @@ Isso irá gerar, depois de remover qualquer executável anterior, o executável 
 
 ### Execução
 
-#### Execução padrão (todas as versões)
-
 ```bash
 ./run.out
 ```
 
 O programa executa sequencialmente os testes de todas as versões implementadas, exibindo o tempo de execução e speedup de cada uma.
-
-#### Configurando número de threads (OpenMP/MPI)
-
-Você pode definir o número de threads via argumento:
-
-```bash
-./run.out --threads 8
-```
-
-#### Execução com MPI
-
-Para rodar a versão MPI (com OpenMP), utilize:
-
-```bash
-mpirun -np 4 ./run.out --threads 4
-```
 
 ---
 
