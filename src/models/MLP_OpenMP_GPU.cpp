@@ -9,14 +9,13 @@
 
 class MLP_OpenMP_GPU : public MLP {
     private:
-    int acc_limit = 0.12;
-
+   
     public:
-        MLP_OpenMP_GPU(const int* layerSizes, int batch_size, double lr = 0.1, int acc_limit = 0.12)
+        MLP_OpenMP_GPU(const int* layerSizes, int batch_size, double lr = 0.1)
             : MLP(layerSizes, batch_size, lr)
         {        }
 
-        MLP_OpenMP_GPU(const MLP& other, int acc_limit = 0.12)
+        MLP_OpenMP_GPU(const MLP& other)
             : MLP(other)
         {
 

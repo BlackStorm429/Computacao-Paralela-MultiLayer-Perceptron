@@ -4,6 +4,20 @@
 #include <device_launch_parameters.h>
 #include <iostream>
 #include <vector>
+
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
+__device__ double atomicAdd(double* address, double val) {
+    unsigned long long int* address_as_ull = (unsigned long long int*)address;
+    unsigned long long int old = *address_as_ull, assumed;
+    do {
+        assumed = old;
+        old = atomicCAS(address_as_ull, assumed,
+                        __double_as_longlong(val + __longlong_as_double(assumed)));
+    } while (assumed != old);
+    return __longlong_as_double(old);
+}
+
+#endif
 #include <cmath>
 #include <algorithm>
 #include <stdexcept>
@@ -20,20 +34,6 @@
 // Kernels (all __global__)
 // --------------------------------------
 
-__global__ void zero_gradients_kernel(double* acc_grad, size_t n) {
-    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) acc_grad[idx] = 0.0;
-}
-
-__global__ void copy_input_kernel(const double* flat_input,
-                                  double*       neurons,
-                                  int           sample_idx,
-                                  int           input_size) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid < input_size) {
-        neurons[tid] = flat_input[sample_idx * input_size + tid];
-    }
-}
 
 __global__ void forward_layer_kernel(const double* weights,
                                      const int*    layers,
@@ -140,12 +140,12 @@ __global__ void update_weights_kernel(double*       weights,
 
 MLP_CUDA::MLP_CUDA(const int* layerSizes,
                    int         batch_size,
-                   double      lr,
-                   double      acc_limit)
-  : MLP(layerSizes, batch_size, lr), acc_limit(acc_limit)
+                   double      lr
+                   )
+  : MLP(layerSizes, batch_size, lr)
 {}
 
-MLP_CUDA::MLP_CUDA(const MLP& mlp_base, const int acc_limit) : MLP(mlp_base), acc_limit(acc_limit) {}
+MLP_CUDA::MLP_CUDA(const MLP& mlp_base) : MLP(mlp_base) {}
 
 void MLP_CUDA::train(const std::vector<std::vector<double>>& inputData,
                      const std::vector<std::vector<double>>& outputData)
@@ -198,21 +198,24 @@ void MLP_CUDA::train(const std::vector<std::vector<double>>& inputData,
     for (int epoch = 0; epoch < 5; ++epoch) {
         for (size_t start = 0; start < N; start += batchSize) {
             int bs = std::min(batchSize, int(N - start));
+            
 
             // zero
             grid = (G + BLOCK - 1) / BLOCK;
-            zero_gradients_kernel<<<grid,BLOCK>>>(d_G, G);
+            cudaMemset(d_G, 0, G * sizeof(double));
             CUDA_CHECK(cudaDeviceSynchronize());
 
             for (int s = start; s < start + bs; ++s) {
                 grid = (inZ + BLOCK - 1) / BLOCK;
-                copy_input_kernel<<<grid,BLOCK>>>(d_in, d_X, s, inZ);
+                cudaMemcpy(d_X + neuronOffsets[0], d_in + s * inZ, inZ * sizeof(double), cudaMemcpyDeviceToDevice);
                 CUDA_CHECK(cudaDeviceSynchronize());
+            
 
                 for (int l = 1; l < L; ++l) {
                     grid = (layers[l] + BLOCK - 1) / BLOCK;
                     forward_layer_kernel<<<grid,BLOCK>>>
                       (d_W,d_Layers,d_nOff,d_wOff,d_X,l);
+
                     CUDA_CHECK(cudaDeviceSynchronize());
                 }
 
@@ -247,7 +250,7 @@ void MLP_CUDA::train(const std::vector<std::vector<double>>& inputData,
     CUDA_CHECK(cudaMemcpy(weights.data(), d_W,
                           W * sizeof(double),
                           cudaMemcpyDeviceToHost));
-
+    
     cudaFree(d_W);     cudaFree(d_X);
     cudaFree(d_D);     cudaFree(d_G);
     cudaFree(d_Layers);cudaFree(d_nOff);

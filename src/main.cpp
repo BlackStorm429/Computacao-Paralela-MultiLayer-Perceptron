@@ -89,15 +89,26 @@ int main(int argc, char* argv[]) {
         const double acc_limit = 0.12;
         MLP mlp_base(layers, batch_size, learning_rate);
         
+        {
+            cout << "\nTreinamento MLP CUDA\n\n";
+                
+            MLP_CUDA cudaNet(mlp_base); // Usar MLP_CUDA
+            MLPTester cudaTester(cudaNet);
+            int64_t cuda_duration = cudaTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
+
+        }
         
-        // {
-        // cout << "\nTreinamento MLP CUDA\n\n";
+        // Treinamento OpenMP GPU
+        {
+            cout << "\nTreinamento MLP OpenMP GPU\n\n";
             
-        // MLP_CUDA cudaNet(mlp_base, 0.1); // Usar MLP_CUDA
-        // MLPTester cudaTester(cudaNet);
-        // int64_t cuda_duration = cudaTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
-        // }
+            MLP_OpenMP_GPU gpuNet(mlp_base);
+            MLPTester gpuTester(gpuNet);
+            gpu_openmp_duration = gpuTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
+            cout << "Duração OpenMP GPU: " << gpu_openmp_duration << " ms\n";
+        }
         
+
         // Treinamento MPI
         {
             
@@ -115,15 +126,6 @@ int main(int argc, char* argv[]) {
             MLPTester openMPTester(openMP_net);
             openmp_duration = openMPTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
             cout << "Duração OpenMP: " << openmp_duration << " ms\n";
-        }
-        // Treinamento OpenMP GPU
-        {
-            cout << "\nTreinamento MLP OpenMP GPU\n\n";
-            
-            MLP_OpenMP_GPU gpuNet(mlp_base);
-            MLPTester gpuTester(gpuNet);
-            gpu_openmp_duration = gpuTester.train(max_epochs, acc_limit, Xtrain, Ytrain);
-            cout << "Duração OpenMP GPU: " << gpu_openmp_duration << " ms\n";
         }
         
         // Treino Sequencial

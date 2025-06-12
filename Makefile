@@ -8,8 +8,8 @@ CXX       := mpic++
 NVCC      := nvcc
 
 # Compile flags
-CXXFLAGS  := -O3 -fopenmp -std=c++17 -Iinclude
-NVCCFLAGS := -arch=sm_70 -O3 -Xcompiler -fopenmp -std=c++17 -Iinclude
+CXXFLAGS  := -O2 -fopenmp -std=c++17 -Iinclude
+NVCCFLAGS := -O2 -std=c++17 -Iinclude
 
 # Linker flags
 LDFLAGS := -fopenmp -lmpi
