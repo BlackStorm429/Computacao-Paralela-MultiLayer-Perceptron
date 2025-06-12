@@ -2,25 +2,26 @@
 
 ## MLP Multicamadas
 
-Repositório para o Projetos 01 e 02 da disciplina de Computação Paralela da Pontíficia Universidade Católica de Minas Gerais (PUC Minas).
+Repositório para os Projetos 01 e 02 da disciplina de Computação Paralela da Pontifícia Universidade Católica de Minas Gerais (PUC Minas).
 
-Implementação paralela de uma Rede Neural Multicamadas (MLP) com versões OpenMP para CPU, MPI, OpenMP para GPU e CUDA para classificação do dataset de imagens de dígitos manuscritos (60k de amostras de treino e 10k de amostras de teste).
+Implementação paralela de uma Rede Neural Multicamadas (MLP) com versões:
+- Sequencial
+- OpenMP para CPU
+- MPI (com OpenMP)
+- OpenMP para GPU
+- CUDA
+
+O objetivo é classificar o dataset de imagens de dígitos manuscritos MNIST (60k de amostras de treino e 10k de amostras de teste).
 
 ---
 
 ## Pré-requisitos
 
 - **Compilador C++17** (g++ 9+ ou Clang 12+)
-
 - **OpenMP** 4.5+
-
 - **MPI** (OpenMPI 4.1+ ou MPICH 3.3+)
-
-- **OpenMP para GPU** (CUDA Toolkit (11.0+))
-
-- **CUDA** (CUDA Toolkit (11.0+))
-
-- **Make** para automatização de compilação
+- **CUDA Toolkit** (11.0+), para OpenMP (GPU) e CUDA
+- **Make** para automatização da compilação
 
 ---
 
@@ -31,175 +32,142 @@ Implementação paralela de uma Rede Neural Multicamadas (MLP) com versões Open
 No diretório raiz do projeto:
 
 ```bash
-
 make clean
-
-```
-
-Isso garantirá que se houvesse um executável anterior, ele seja removido. Após isso executar:
-
-```bash
-
 make
-
 ```
 
-Isso gerará o executável `run.out` com todas as versões (sequencial, OpenMP para CPU, MPI, OpenMP para GPU e CUDA).
+Isso irá gerar, depois de remover qualquer executável anterior, o executável `run.out` com todas as versões (sequencial, OpenMP para CPU, MPI, OpenMP para GPU e CUDA).
 
 ### Execução
 
-#### Todas os modelos
+#### Execução padrão (todas as versões)
 
 ```bash
-
 ./run.out
-
 ```
+
+O programa executa sequencialmente os testes de todas as versões implementadas, exibindo o tempo de execução e speedup de cada uma.
+
+#### Configurando número de threads (OpenMP/MPI)
+
+Você pode definir o número de threads via argumento:
+
+```bash
+./run.out --threads 8
+```
+
+#### Execução com MPI
+
+Para rodar a versão MPI (com OpenMP), utilize:
+
+```bash
+mpirun -np 4 ./run.out --threads 4
+```
+
+---
 
 ## Arquitetura da MLP
 
-### Topologia Configurável
+### Topologia
+
+Definida no código, exemplo:
 
 ```cpp
-
 int layers[] = {784, 196, 98, 10}; // 784 entradas, 196 hidden layers (98 neurônios cada), 10 saídas
-
 ```
+
+### Hiperparâmetros
+
+Batch size, taxa de aprendizado, número de épocas e limite de acurácia são definidos no código principal.
 
 ### Características Principais
 
 - **Funções de Ativação**:
-
-- Sigmoid aproximada para cálculo rápido.
-
-- Derivada otimizada para propagação reversa paralela.
-
+    - Sigmoid aproximada para cálculo rápido.
+    - Derivada otimizada para propagação reversa paralela.
 
 - **Inicialização de Pesos**:
+    - Inicialização com normalização.
+    - Paralelização na inicialização (OpenMP).
 
-- He initialization com normalização.
+### Fluxo de treinamento
 
-- Paralelização na inicialização (OpenMP).
-
-### Fluxo de Treinamento
-
-1. Carregamento e normalização Min-Max.
-
-2. Divisão treino/teste (80/20).
-
-3. Forward propagation paralelizado.
-
-4. Cálculo de gradientes distribuído.
-
-5. Backward propagation com redução de gradientes.
-
-6. Atualização de pesos com sincronização periódica.
+    1. Carregamento e normalização do MNIST.
+    2. Divisão treino/teste (80/20).
+    3. Treinamento sequencial, OpenMP, MPI, OpenMP GPU e CUDA.
+    4. Exibição dos tempos e speedups.
 
 ---
 
-## Implementação Paralela
+## Implementação
 
-### Versão OpenMP
+### Sequencial
 
-#### Principais Otimizações
+- Treinamento tradicional, sem paralelismo.
 
-```cpp
+### OpenMP
 
-#pragma omp parallel for collapse(2) // Paralelização em 2 níveis
+- Paralelização do cálculo de gradientes e propagação.
+- Uso de thread-local storage para gradientes.
+- Redução dos gradientes ao final de cada batch.
 
-#pragma omp declare reduction // Redução customizada de gradientes
+### MPI (com OpenMP)
 
-```
+- Cada processo MPI executa um treinamento independente com OpenMP.
+- Sincronização dos melhores pesos entre processos ao final de cada época.
 
-- Batch processing com unrolling de loops (4 elementos por iteração).
+### OpenMP para GPU
 
-- Alinhamento de memória para evitar false sharing.
+- Utiliza diretivas OpenMP target para offload em GPU (se disponível).
+- Processamento em batches.
 
-- Thread-local storage para gradientes.
+### CUDA
 
-#### Exemplo de Uso
-
-```bash
-
-OMP_NUM_THREADS=8 ./main.out --model omp --epochs 500
-
-```
-
-### Versão MPI
-
-#### Estratégia Híbrida
-
-```cpp
-
-MPI_Bcast(weights); // Sincronização de pesos
-
-MPI_Reduce(gradients); // Agregação distribuída
-
-```
-
-- Divisão do dataset entre processos MPI.
-
-- Comunicação assíncrona com MPI_Isend/MPI_Irecv.
-
-- Combinação de gradientes com precisão mista (float32 para comunicação).
-
-#### Topologia Recomendada
-
-```bash
-
-mpirun -np 8 -x OMP_NUM_THREADS=4 ./main.out --model mpi
-
-```
+- Implementação dedicada para GPU usando CUDA.
+- Processamento em batches e paralelização total do forward/backward.
 
 ---
 
-## Resultados Esperados
+## Resultados Obtidos
 
-| Versão       | Configuração            | Speedup | Acurácia | Memória |
+|   Versão   |      Configuração      | Tempo (ms) | Speedup | Acurácia |
+|------------|------------------------|------------|---------|----------|
+| Sequencial | 1 core                 | 63120      | 1x      | 18.21%   |
+| OpenMP     | 12 threads             | 66529      | 0.95x   | 18.21%   |
+| MPI+OpenMP | 1 processo, 12 threads | 65869      | 0.96x   | 18.21%   |
+| OpenMP GPU | 1 processo, 12 threads | 62049      | 1.02x   | 23.5%    |
+| CUDA       | 1 processo, 12 threads | 17320      | 3.64x   | 23.5%    |
 
-|--------------|-------------------------|---------|----------|---------|
-
-| Sequencial   | 1 core                  | 1x      | 94.2%    | 4.2GB   |
-
-| OpenMP       | 12 threads              | 1.03x   | 94.5%    | 5.1GB   |
-
-| MPI+OpenMP   | 1 processo, 12 threads  | 1.1x    | 94.1%    | 6.3GB   |
-
-| OpenMP GPU   | 1 processo, 12 threads  | 1.12x   | 94.1%    | 6.3GB   |
-
-| CUDA         | 1 processo, 12 threads  | 3.68x   | 94.1%    | 6.3GB   |
-
-*Baseado em até 50 épocas com dataset de 10.000 amostras*
+*Baseado em até 28 épocas com dataset de 10.000 amostras*
 
 ---
 
 ## Estrutura do Código
 
+### Estrutura de Diretórios
+
+- `src/` — Código-fonte principal
+- `src/models/` — Implementações das diferentes versões do MLP
+- `src/util/` — Utilitários (parser, tester)
+- `include/` — Headers das interfaces e modelos
+- `dataset/mnist/` — Arquivos da base de dados MNIST (`t10k-images.idx3-ubyte`, `t10k-labels.idx1-ubyte`)
+
 ### Diagrama de Classes
 
 ```
-
-IMLP (Interface)
 MLP_CUDA (Interface)
-
+IMLP (Interface)
 ├── MLP (Sequencial)
-
-├── MLP_OpenMP
-
-└── MLP_MPI
-
-└── MLP_OpenMP_GPU
-
-└── MLP_CUDA
-
+│   ├── MLP_OpenMP
+│   ├── MLP_MPI
+│   ├── MLP_OpenMP_GPU
+│   └── MLP_CUDA
 ```
 
 ### Componentes Críticos
 
 - **MLPTester**: Responsável pela avaliação de desempenho.
-
 - **CSVparser**: Pré-processamento eficiente de dados.
-
 - **Normalização**: Adaptativa por coluna.
 
 ---
@@ -209,21 +177,17 @@ MLP_CUDA (Interface)
 ### Lições Aprendidas
 
 - Paralelização de loops internos traz ganhos significativos.
-
 - Redução de precisão na comunicação MPI economiza 50% de banda.
-
 - Balanceamento dinâmico é essencial para datasets desbalanceados.
 
 ### Limitações
 
 - Overhead de comunicação em redes lentas.
-
 - Dependência de tamanho de batch para eficiência.
 
 ### Melhorias Futuras
 
 - Implementação de momentum para gradientes.
-
 - Suporte a GPUs via OpenAC.
 
 ### Principais mudanças
@@ -231,25 +195,26 @@ MLP_CUDA (Interface)
 #### Decisões de Implementação OpenMP
 
 - Flattening transforma input e output em 1D arrays.
-
 - Treinamento com Mini-Batchs facilitam paralelismo e aceleram a execução do programa.
-
 - Parallel Zeroing: Utiliza o OpenMP para setar todos os gradientes acumulados antes de cada batch.
-
 - Forward Pass copia o input para o array de neurônios e computa a ativação.
-
 - Backward Pass propaga os deltas calculados para trás pelas camadas ocultas.
-
 - Acumulação de Gradiente: Para cada peso, acumula o gradiente usando operações atômicas.
 
 #### Decisões de Implementação CUDA
 
 - Forward pass calcula cada camada usando função sigmoide.
-
 - Backward pass calcula os deltas (gradientes locais) de trás pra frente.
-
 - Acumulação de gradiente usando AtomicAdd.
-
 - Sincronização para garantir que todas as threads terminam na mesma época.
-
 - Mini-Batchs facilitam paralelismo e aceleram a execução do programa.
+
+## Observações
+
+- O dataset MNIST deve estar na pasta `dataset/mnist/` (`dataset/mnist/t10k-images.idx3-ubyte`, `dataset/mnist/t10k-labels.idx1-ubyte`).
+- O código já carrega e divide o dataset automaticamente.
+- Não é necessário passar argumentos de modelo: todas as versões são executadas em sequência.
+- Caso deseje definir o número de threads para as versões OpenMP ou MPI+OpenMP, utilize o argumento `--threads N` (exemplo: `./run.out --threads 8`).
+- O programa executa, em sequência: CUDA, OpenMP GPU, MPI+OpenMP, OpenMP e Sequencial, exibindo os tempos e speedups ao final.
+
+---
